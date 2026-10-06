@@ -62,6 +62,22 @@ export const WorkStatusTeamSection: React.FC<Props> = ({ sessionId, directory, f
   const setSectionExpanded = useUIStore((state) => state.setWorkStatusSectionExpanded);
   const [boardOpen, setBoardOpen] = React.useState(false);
 
+  // The panel tab is the primary opening: the board sits beside the chat
+  // instead of covering it, and can be resized and re-opened like any other
+  // surface. Mobile and VS Code keep the modal — the same split the member
+  // rows already make when opening a session.
+  const openBoard = React.useCallback(() => {
+    if (!directory || !sessionId || isMobile || isVSCodeRuntime()) {
+      setBoardOpen(true);
+      return;
+    }
+    openContextPanelTab(directory, {
+      mode: 'team',
+      dedupeKey: `team:${sessionId}`,
+      label: board?.name ?? t('chat.workStatus.teamBoard.title'),
+    });
+  }, [board?.name, directory, isMobile, openContextPanelTab, sessionId, t]);
+
   const present = board !== null;
   useReportWorkStatusPresence(SECTION_ID, present);
 
@@ -106,7 +122,7 @@ export const WorkStatusTeamSection: React.FC<Props> = ({ sessionId, directory, f
             size="icon"
             variant="ghost"
             className="size-6 shrink-0 text-muted-foreground"
-            onClick={() => setBoardOpen(true)}
+            onClick={openBoard}
             aria-label={t('chat.workStatus.teamBoard.open')}
             title={t('chat.workStatus.teamBoard.open')}
           >
