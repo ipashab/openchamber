@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { TEAM_DOMAIN_IDS } from './tools.js';
+
 /**
  * Team presets: saved team recipes the "New Team" dialog offers, plus the
  * built-in lineup shipped with the app. A preset describes the roster only —
@@ -31,6 +33,11 @@ const normalizePresetMember = (member) => {
   const name = asNonEmptyString(member?.name);
   if (!name) return null;
   const model = asNonEmptyString(member?.model);
+  const isLead = member?.isLead === true;
+  // The Team Lead sits outside every sub-team — it talks to sub-team leads,
+  // not around them — so its domain fields never survive normalization. An
+  // unknown domain cannot carry a lead flag either.
+  const domain = isLead ? null : (TEAM_DOMAIN_IDS.includes(member?.domain) ? member.domain : null);
   return {
     name,
     agent: asNonEmptyString(member?.agent),
@@ -38,7 +45,9 @@ const normalizePresetMember = (member) => {
     brief: asNonEmptyString(member?.brief),
     skills: asStringList(member?.skills),
     mcpServers: asStringList(member?.mcpServers),
-    isLead: member?.isLead === true,
+    isLead,
+    domain,
+    isDomainLead: domain !== null && member?.isDomainLead === true,
   };
 };
 
@@ -80,6 +89,19 @@ export const normalizeTeamPreset = (preset, { id } = {}) => {
  * in Russian because this is the language the team's prompts are written in.
  */
 export const BUILTIN_TEAM_PRESETS = [
+  {
+    id: 'builtin-studio',
+    name: 'Студия с подкомандами',
+    description: 'Лид и лиды четырёх подкоманд — аналитика, разработка, ревью и тестирование. Исполнителей в подкоманды добавляйте позже кнопкой «Изменить состав».',
+    builtIn: true,
+    members: [
+      { name: 'Тим-лид', agent: null, model: null, brief: 'Ставишь задачи лидам подкоманд, собираешь с них готовые результаты по областям и суммируешь финальный ответ пользователю. В детали исполнителей внутри подкоманд не лезешь.', skills: [], mcpServers: [], isLead: true },
+      { name: 'Лид аналитики', agent: 'explore', model: null, brief: 'Руководишь подкомандой аналитики: декомпозируешь исследование, раздаёшь исполнителям, проверяешь их выводы и отправляешь лиду команды один сводный результат.', skills: [], mcpServers: [], isLead: false, domain: 'analytics', isDomainLead: true },
+      { name: 'Лид разработки', agent: null, model: null, brief: 'Руководишь подкомандой разработки: планируешь правки кода, распределяешь их между исполнителями, ревьюишь их работу внутри подкоманды и сдаёшь лиду команды готовый результат.', skills: [], mcpServers: [], isLead: false, domain: 'development', isDomainLead: true },
+      { name: 'Лид ревью', agent: null, model: null, brief: 'Руководишь подкомандой ревью: распределяешь диффы по ревьюерам, собираешь и фильтруешь замечания, отправляешь лиду команды выверенный список.', skills: [], mcpServers: [], isLead: false, domain: 'review', isDomainLead: true },
+      { name: 'Лид тестирования', agent: null, model: null, brief: 'Руководишь подкомандой тестирования: планируешь прогоны, раздаёшь тест-задания исполнителям, разбираешь падения и отправляешь лиду команды итог по качеству.', skills: [], mcpServers: [], isLead: false, domain: 'qa', isDomainLead: true },
+    ],
+  },
   {
     id: 'builtin-engineering',
     name: 'Инженерная команда',

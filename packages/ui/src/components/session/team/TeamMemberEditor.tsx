@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { TeamPresetMember } from '@/lib/team/team-create-api';
+import { TEAM_DOMAIN_IDS, TEAM_DOMAIN_LABEL_KEYS, type TeamDomain } from '@/lib/team/team-board-api';
 
 export type TeamOption = { value: string; label: string };
 
@@ -45,6 +46,8 @@ const toMember = (name: string): TeamPresetMember => ({
   skills: [],
   mcpServers: [],
   isLead: false,
+  domain: null,
+  isDomainLead: false,
 });
 
 type Props = {
@@ -54,6 +57,11 @@ type Props = {
   modelOptions: TeamOption[];
   skillOptions: TeamOption[];
   mcpOptions: TeamOption[];
+  /**
+   * Hide the "Team Lead" radio when false — the add-to-team form of the live
+   * roster editor uses the same card, and a live team already has its lead.
+   */
+  allowLeadToggle?: boolean;
 };
 
 /**
@@ -100,11 +108,11 @@ const ToolPicker: React.FC<{
 };
 
 /**
- * The roster editor shared by the "New Team" dialog and the settings preset
- * page: one card per member with its name, agent, model, role brief and tool
- * allowances. The "Team Lead" checkbox is a radio in checkbox clothing — a
- * team runs with exactly one lead, so checking a member clears the others,
- * and the lead card cannot be removed.
+ * The roster editor shared by the "New Team" dialog, the settings preset page
+ * and the live-roster "add members" form: one card per member with its name,
+ * agent, model, role brief and tool allowances. The "Team Lead" checkbox is a
+ * radio in checkbox clothing — a team runs with exactly one lead, so checking
+ * a member clears the others, and the lead card cannot be removed.
  */
 export const TeamMemberEditor: React.FC<Props> = ({
   members,
@@ -113,8 +121,11 @@ export const TeamMemberEditor: React.FC<Props> = ({
   modelOptions,
   skillOptions,
   mcpOptions,
+  allowLeadToggle = true,
 }) => {
   const { t } = useI18n();
+
+  const domainOptions = TEAM_DOMAIN_IDS.map((id) => ({ value: id, label: t(TEAM_DOMAIN_LABEL_KEYS[id]) }));
 
   const patch = (index: number, next: Partial<TeamPresetMember>) => {
     onChange(members.map((entry, position) => (position === index ? { ...entry, ...next } : entry)));
@@ -159,14 +170,16 @@ export const TeamMemberEditor: React.FC<Props> = ({
                 placeholder={t('team.create.member.name')}
                 className="h-8 flex-1"
               />
-              <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs">
-                <Checkbox
-                  checked={isLead}
-                  onChange={() => promoteLead(index)}
-                  ariaLabel={t('team.create.member.lead')}
-                />
-                {t('team.create.member.lead')}
-              </label>
+              {allowLeadToggle ? (
+                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs">
+                  <Checkbox
+                    checked={isLead}
+                    onChange={() => promoteLead(index)}
+                    ariaLabel={t('team.create.member.lead')}
+                  />
+                  {t('team.create.member.lead')}
+                </label>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
@@ -231,6 +244,47 @@ export const TeamMemberEditor: React.FC<Props> = ({
                 </SelectContent>
               </Select>
             </div>
+
+            {/* The sub-team row: a domain plus, inside a domain, the "leads
+                this sub-team" flag. The Team Lead sits outside every domain —
+                it talks to sub-team leads, not around them. */}
+            {!isLead ? (
+              <div className="flex items-center gap-2">
+                <Select
+                  value={member.domain ?? DEFAULT_VALUE}
+                  onValueChange={(value) => patch(index, {
+                    domain: value === DEFAULT_VALUE ? null : (value as TeamDomain),
+                    isDomainLead: value === DEFAULT_VALUE ? false : member.isDomainLead === true,
+                  })}
+                  items={[
+                    { value: DEFAULT_VALUE, label: t('team.create.member.domainNone') },
+                    ...domainOptions,
+                  ]}
+                >
+                  <SelectTrigger size="sm" className="h-8 w-full">
+                    <SelectValue>
+                      {(value) => selectedLabel(value, t('team.create.member.domainNone'), domainOptions)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={DEFAULT_VALUE}>{t('team.create.member.domainNone')}</SelectItem>
+                    {domainOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {member.domain ? (
+                  <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs">
+                    <Checkbox
+                      checked={member.isDomainLead === true}
+                      onChange={() => patch(index, { isDomainLead: !(member.isDomainLead === true) })}
+                      ariaLabel={t('team.create.member.domainLead')}
+                    />
+                    {t('team.create.member.domainLead')}
+                  </label>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="grid grid-cols-2 gap-2">
               <ToolPicker

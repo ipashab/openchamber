@@ -35,7 +35,7 @@ const blankPreset = (): TeamPreset => ({
   id: '',
   name: '',
   description: null,
-  members: [{ name: '', agent: null, model: null, brief: null, skills: [], mcpServers: [], isLead: true }],
+  members: [{ name: '', agent: null, model: null, brief: null, skills: [], mcpServers: [], isLead: true, domain: null, isDomainLead: false }],
 });
 
 /**

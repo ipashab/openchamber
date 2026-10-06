@@ -464,3 +464,153 @@ describe('createFromUi', () => {
     expect(openCodeState.creates[1].permissions).toEqual([]);
   });
 });
+
+describe('team service: sub-teams and live roster editing', () => {
+  it('spawns a sub-team lead and nests its workers under it', async () => {
+    const { service, sent, openCodeState } = await makeService();
+    await service.executeAction('team.start', { name: 'Crew' }, 'ses_lead');
+    await service.executeAction('team.spawn_agent', { name: 'Анна', agent: 'build', domain: 'development', isDomainLead: true }, 'ses_lead');
+    await service.executeAction('team.spawn_agent', { name: 'Богдан', agent: 'build', domain: 'development' }, 'ses_lead');
+
+    const [team] = await service.snapshot();
+    const leader = team.members.find((member) => member.name === 'Анна');
+    const worker = team.members.find((member) => member.name === 'Богдан');
+    expect(leader.isDomainLead).toBe(true);
+    expect(leader.domain).toBe('development');
+    expect(worker.isDomainLead).toBe(false);
+
+    const leadCreate = openCodeState.creates.find((create) => create.metadata?.openchamber?.team?.slotId === leader.slotId);
+    const workerCreate = openCodeState.creates.find((create) => create.metadata?.openchamber?.team?.slotId === worker.slotId);
+    expect(leadCreate.parentID).toBe('ses_lead');
+    expect(workerCreate.parentID).toBe(leader.sessionId);
+
+    const leadBriefing = sent.find((entry) => entry.sessionID === leader.sessionId).payload.prompt;
+    expect(leadBriefing).toContain("You Lead the 'development' Sub-Team");
+    const workerBriefing = sent.find((entry) => entry.sessionID === worker.sessionId).payload.prompt;
+    expect(workerBriefing).toContain(`Your sub-team lead: Анна (slot_id: ${leader.slotId})`);
+  });
+
+  it('refuses a second lead for the same sub-team', async () => {
+    const { service } = await makeService();
+    await service.executeAction('team.start', { name: 'Crew' }, 'ses_lead');
+    await service.executeAction('team.spawn_agent', { name: 'Анна', agent: 'build', domain: 'review', isDomainLead: true }, 'ses_lead');
+    await expect(service.executeAction('team.spawn_agent', { name: 'Вера', agent: 'build', domain: 'review', isDomainLead: true }, 'ses_lead'))
+      .rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it('routes a domain member’s reports through its sub-team lead', async () => {
+    const { service } = await makeService();
+    await service.executeAction('team.start', { name: 'Crew' }, 'ses_lead');
+    await service.executeAction('team.spawn_agent', { name: 'Анна', agent: 'build', domain: 'qa', isDomainLead: true }, 'ses_lead');
+    await service.executeAction('team.spawn_agent', { name: 'Богдан', agent: 'build', domain: 'qa' }, 'ses_lead');
+    const [team] = await service.snapshot();
+    const leader = team.members.find((member) => member.name === 'Анна');
+    const worker = team.members.find((member) => member.name === 'Богдан');
+    await service.processPayload(idleEvent(leader.sessionId));
+    await service.processPayload(idleEvent(worker.sessionId));
+
+    // The worker reports to the sub-team lead, not to the Team Lead.
+    await service.executeAction('team.send_message', { to: leader.slotId, message: 'QA: тесты зелёные' }, worker.sessionId);
+    await service.processPayload(idleEvent(worker.sessionId));
+    let [teamNow] = await service.snapshot();
+    expect(teamNow.mailbox.some((message) => (
+      message.type === 'idle_notification' && message.to === leader.slotId && message.from === worker.slotId
+    ))).toBe(true);
+    expect(teamNow.mailbox.some((message) => (
+      message.type === 'idle_notification' && message.to === 'lead' && message.from === worker.slotId
+    ))).toBe(false);
+
+    // The sub-team lead aggregates upward to the Team Lead.
+    await service.executeAction('team.send_message', { to: 'lead', message: 'Итог по QA: всё зелёное' }, leader.sessionId);
+    await service.processPayload(idleEvent(leader.sessionId));
+    [teamNow] = await service.snapshot();
+    expect(teamNow.mailbox.some((message) => (
+      message.type === 'idle_notification' && message.to === 'lead' && message.from === leader.slotId
+    ))).toBe(true);
+  });
+
+  it('retires a member that approves shutdown through its sub-team lead', async () => {
+    const { service } = await makeService();
+    await service.executeAction('team.start', { name: 'Crew' }, 'ses_lead');
+    await service.executeAction('team.spawn_agent', { name: 'Анна', agent: 'build', domain: 'review', isDomainLead: true }, 'ses_lead');
+    await service.executeAction('team.spawn_agent', { name: 'Богдан', agent: 'build', domain: 'review' }, 'ses_lead');
+    const [team] = await service.snapshot();
+    const leader = team.members.find((member) => member.name === 'Анна');
+    const worker = team.members.find((member) => member.name === 'Богдан');
+    await service.processPayload(idleEvent(leader.sessionId));
+    await service.processPayload(idleEvent(worker.sessionId));
+
+    await service.executeAction('team.send_message', { to: leader.slotId, message: 'shutdown_approved' }, worker.sessionId);
+    const [teamNow] = await service.snapshot();
+    expect(teamNow.members.find((member) => member.slotId === worker.slotId).removed).toBe(true);
+  });
+
+  it('creates sub-team leads ahead of their workers and nests the sessions', async () => {
+    const { service, openCodeState } = await makeService();
+    await service.createFromUi({
+      name: 'Студия',
+      directory: '/work/project',
+      members: [
+        { name: 'Тим-лид', isLead: true },
+        { name: 'Работяга разработки', domain: 'development' },
+        { name: 'Лид разработки', domain: 'development', isDomainLead: true },
+      ],
+    });
+    const [team] = await service.snapshot();
+    const domainLead = team.members.find((member) => member.name === 'Лид разработки');
+    const worker = team.members.find((member) => member.name === 'Работяга разработки');
+    expect(domainLead.isDomainLead).toBe(true);
+    expect(worker.domain).toBe('development');
+    const workerCreate = openCodeState.creates.find((create) => create.metadata?.openchamber?.team?.slotId === worker.slotId);
+    expect(workerCreate.parentID).toBe(domainLead.sessionId);
+  });
+
+  it('rejects a lineup with two leads of the same sub-team', async () => {
+    const { service } = await makeService();
+    await expect(service.createFromUi({
+      name: 'Студия',
+      directory: '/work/project',
+      members: [
+        { name: 'Тим-лид', isLead: true },
+        { name: 'Аналитик-1', domain: 'analytics', isDomainLead: true },
+        { name: 'Аналитик-2', domain: 'analytics', isDomainLead: true },
+      ],
+    })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it('adds a member to a live team and requests its shutdown from the app', async () => {
+    const { service, sent, openCodeState } = await makeService();
+    const created = await service.createFromUi({
+      name: 'Дуэт',
+      directory: '/work/project',
+      members: [{ name: 'Тим-лид', isLead: true }, { name: 'Исполнитель' }],
+    });
+    const teamId = created.team.id;
+
+    const added = await service.addMemberFromUi({ teamId, input: { name: 'Новый', agent: 'build', domain: 'qa', skills: ['demo'], mcpServers: ['docs'] } });
+    expect(added.member.slotId).toMatch(/^member_/);
+    const [team] = await service.snapshot();
+    const newer = team.members.find((member) => member.name === 'Новый');
+    expect(newer.domain).toBe('qa');
+    expect(newer.skills).toEqual(['demo']);
+    expect(sent.some((entry) => entry.sessionID === newer.sessionId
+      && entry.payload.prompt.includes('You are a Team Member'))).toBe(true);
+    const create = openCodeState.creates.find((entry) => entry.metadata?.openchamber?.team?.slotId === newer.slotId);
+    expect(create.permissions).toEqual([
+      { action: 'skill', resource: '*', effect: 'deny' },
+      { action: 'skill', resource: 'demo', effect: 'allow' },
+      { action: 'tracker_*', resource: '*', effect: 'deny' },
+    ]);
+
+    // The app dismissal rides the same approval handshake as the lead tool.
+    await service.shutdownMemberFromUi({ teamId, slotId: newer.slotId, reason: 'не нужен' });
+    const [teamNow] = await service.snapshot();
+    const shutdownMessage = teamNow.mailbox.find((message) => message.type === 'shutdown_request' && message.to === newer.slotId);
+    expect(shutdownMessage.from).toBe('lead');
+    expect(shutdownMessage.summary).toBe('не нужен');
+
+    await expect(service.shutdownMemberFromUi({ teamId, slotId: 'lead' })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.addMemberFromUi({ teamId, input: { name: 'Новый' } })).rejects.toMatchObject({ statusCode: 409 });
+    await expect(service.addMemberFromUi({ teamId: 'team_missing', input: { name: 'Кто-то' } })).rejects.toMatchObject({ statusCode: 404 });
+  });
+});

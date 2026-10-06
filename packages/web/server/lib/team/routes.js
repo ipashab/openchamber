@@ -46,6 +46,35 @@ export const registerTeamRoutes = (app, dependencies) => {
     }
   });
 
+  // "Edit team": the app adds a member to a live roster through the same
+  // spawn path the lead tool uses, with the dialog's tool allowances, and
+  // requests a member's shutdown with the same approval handshake.
+  app.post('/api/openchamber/teams/:teamId/members', jsonBody, async (req, res) => {
+    try {
+      const result = await teamService.addMemberFromUi({ teamId: req.params?.teamId, input: req.body ?? {} });
+      return res.status(201).json(result);
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+      if (status >= 500) console.error('[team] member add failed:', error?.message ?? error);
+      return res.status(status).json({ error: error?.message ?? 'Failed to add member' });
+    }
+  });
+
+  app.post('/api/openchamber/teams/:teamId/members/:slotId/shutdown', jsonBody, async (req, res) => {
+    try {
+      const result = await teamService.shutdownMemberFromUi({
+        teamId: req.params?.teamId,
+        slotId: req.params?.slotId,
+        reason: req.body?.reason,
+      });
+      return res.json(result);
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+      if (status >= 500) console.error('[team] shutdown request failed:', error?.message ?? error);
+      return res.status(status).json({ error: error?.message ?? 'Failed to request shutdown' });
+    }
+  });
+
   // Presets are always wired in the server; a missing store is a wiring bug.
   if (!teamPresets) throw new Error('team routes need a team preset store');
 
