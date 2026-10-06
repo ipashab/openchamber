@@ -214,3 +214,86 @@ export const requestTeamMemberShutdown = async (
     throw new Error(await readRouteError(response, 'Shutdown request failed'));
   }
 };
+
+/**
+ * The live roster of a team as a preset recipe, from the export route. The
+ * shape is the shelf's own, so it saves or downloads without conversion.
+ */
+export const fetchTeamPresetExport = async (
+  teamId: string,
+  fetchImpl: typeof runtimeFetch = runtimeFetch,
+): Promise<TeamPreset> => {
+  const response = await fetchImpl(
+    `${TEAMS_ROUTE}/${encodeURIComponent(teamId)}/preset`,
+    { headers: { accept: 'application/json' } },
+  );
+  if (!response.ok) {
+    throw new Error(await readRouteError(response, 'Team preset export failed'));
+  }
+  const body = await response.json().catch(() => null);
+  const parsed = z.object({ preset: teamPresetSchema }).safeParse(body);
+  if (!parsed.success) {
+    throw new Error('Team preset export did not match the expected shape');
+  }
+  return parsed.data.preset;
+};
+
+// Recipe files carry no id of their own; a missing id saves as a fresh preset.
+// The members floor stays client-side too: the array schema of the shelf is
+// read-tolerant, while an import of "no members at all" is a mistake.
+const importPresetSchema = teamPresetSchema.extend({
+  id: z.string().catch(''),
+  members: teamPresetSchema.shape.members.min(1),
+});
+
+/**
+ * Import side of the recipe files: one JSON object or an array of them.
+ * Wrong files come back as a reason code, not an exception, so the caller
+ * owns the localized message.
+ */
+export const parseTeamPresetImport = (
+  text: string,
+): { presets: TeamPreset[] } | { error: 'invalidJson' | 'invalidPreset' } => {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return { error: 'invalidJson' };
+  }
+  const parsed = z
+    .array(importPresetSchema)
+    .min(1)
+    .safeParse(Array.isArray(body) ? body : [body]);
+  if (!parsed.success) {
+    return { error: 'invalidPreset' };
+  }
+  return { presets: parsed.data };
+};
+
+/** One recipe as a portable JSON string; instance-local fields never ship. */
+export const teamPresetToPortableJson = (preset: TeamPreset): string => JSON.stringify({
+  name: preset.name,
+  description: preset.description ?? null,
+  members: preset.members.map((member) => ({
+    name: member.name,
+    agent: member.agent ?? null,
+    model: member.model ?? null,
+    brief: member.brief ?? null,
+    skills: member.skills,
+    mcpServers: member.mcpServers,
+    isLead: member.isLead,
+    domain: member.domain ?? null,
+    isDomainLead: member.isDomainLead ?? false,
+  })),
+}, null, 2);
+
+/** Download one recipe as a JSON file; importing it back round-trips. */
+export const downloadTeamPresetJson = (preset: TeamPreset): void => {
+  const slug = preset.name.trim().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'team-preset';
+  const href = URL.createObjectURL(new Blob([teamPresetToPortableJson(preset)], { type: 'application/json' }));
+  const anchor = document.createElement('a');
+  anchor.href = href;
+  anchor.download = `${slug}.team-preset.json`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(href), 1_000);
+};

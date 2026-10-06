@@ -5,9 +5,12 @@ import {
   createTeam,
   deleteTeamPreset,
   fetchTeamPresets,
+  fetchTeamPresetExport,
+  parseTeamPresetImport,
   requestTeamMemberShutdown,
   saveTeamPreset,
   teamPresetSchema,
+  teamPresetToPortableJson,
   type TeamPreset,
 } from './team-create-api';
 
@@ -168,5 +171,57 @@ describe('team create api', () => {
     // The schema only tolerates; the server's preset normalizer is what
     // strips the orphan lead flag from an unknown domain.
     expect(parsed.members[0].domain).toBeNull();
+  });
+});
+
+describe('team preset recipe files', () => {
+  const recipe: TeamPreset = {
+    id: 'preset_1',
+    name: 'Дуэт',
+    description: null,
+    members: [
+      { name: 'Лид', agent: null, model: null, brief: null, skills: [], mcpServers: [], isLead: true, domain: null, isDomainLead: false },
+      { name: 'Лид QA', agent: 'build', model: 'prov/alpha', brief: 'Прогоны', skills: ['demo'], mcpServers: [], isLead: false, domain: 'qa', isDomainLead: true },
+    ],
+  };
+
+  test('fetchTeamPresetExport parses the recipe route answer', async () => {
+    const capture: {url?: string} = {};
+    const fetches = fakeFetch(200, { preset: recipe }, capture);
+    const exported = await fetchTeamPresetExport('team_1', fetches as never);
+    expect(exported.members[1].domain).toBe('qa');
+    expect(exported.members[1].skills).toEqual(['demo']);
+    expect(capture.url).toContain('/api/openchamber/teams/team_1/preset');
+  });
+
+  test('fetchTeamPresetExport surfaces a missing team', async () => {
+    const fetches = fakeFetch(404, { error: "No team with id 'team_missing'" });
+    await expect(fetchTeamPresetExport('team_missing', fetches as never)).rejects.toThrow(/No team/);
+  });
+
+  test('parseTeamPresetImport reads one recipe or a JSON array of them', () => {
+    const single = parseTeamPresetImport(teamPresetToPortableJson(recipe));
+    expect('presets' in single).toBe(true);
+    if ('presets' in single) {
+      expect(single.presets[0].name).toBe('Дуэт');
+      expect(single.presets[0].members[1].skills).toEqual(['demo']);
+      expect(single.presets[0].members[1].domain).toBe('qa');
+    }
+    const many = parseTeamPresetImport(JSON.stringify([JSON.parse(teamPresetToPortableJson(recipe)), recipe]));
+    expect('presets' in many && many.presets).toHaveLength(2);
+  });
+
+  test('a recipe file carries no id and imports as a fresh preset', () => {
+    const portable = JSON.parse(teamPresetToPortableJson(recipe));
+    expect(portable.id).toBeUndefined();
+    expect(portable.builtIn).toBeUndefined();
+    const result = parseTeamPresetImport(teamPresetToPortableJson(recipe));
+    if ('presets' in result) expect(result.presets[0].id).toBe('');
+  });
+
+  test('parseTeamPresetImport refuses broken JSON and foreign objects', () => {
+    expect(parseTeamPresetImport('{nope')).toEqual({ error: 'invalidJson' });
+    expect(parseTeamPresetImport('{"name":"x","members":[]}')).toEqual({ error: 'invalidPreset' });
+    expect(parseTeamPresetImport('[42]')).toEqual({ error: 'invalidPreset' });
   });
 });

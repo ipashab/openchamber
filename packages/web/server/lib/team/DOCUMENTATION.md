@@ -59,8 +59,11 @@ model sees the full action list either way.
 
 Actions: `team.start`, `team.members`, `team.read_messages`,
 `team.send_message`, `team.task_create`, `team.task_update`, `team.task_list`,
-`team.list_assistants`, `team.describe_assistant`, `team.spawn_agent`,
-`team.rename_agent`, `team.interrupt_agent`, `team.shutdown_agent`.
+`team.list_assistants`, `team.describe_assistant` (every member) and
+`team.spawn_agent`, `team.rename_agent`, `team.interrupt_agent`,
+`team.shutdown_agent`, `team.export_preset` (Team Lead only). The export
+snapshots the active roster — name, description, each member's agent, model,
+brief and tool allowances — as the preset JSON the shelf round-trips.
 
 ## Turn semantics (the part that keeps teams alive)
 
@@ -130,6 +133,9 @@ The app's own team management rides the same routes:
 - `POST /api/openchamber/teams/:teamId/members/:slotId/shutdown` — the
   dismissal button of the live-roster editor; the same approval handshake
   the lead tool uses, requested by the user.
+- `GET /api/openchamber/teams/:teamId/preset` — the roster of a live team as
+  a preset recipe JSON, feeding the editor's "Save as preset" and
+  "Download JSON" actions; the same payload `team.export_preset` returns.
 
 ## Test seams
 
