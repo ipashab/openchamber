@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select';
 import type { TeamPresetMember } from '@/lib/team/team-create-api';
 import { TEAM_DOMAIN_IDS, TEAM_DOMAIN_LABEL_KEYS, type TeamDomain } from '@/lib/team/team-board-api';
+import { everyOptionValue, isEveryOptionSelected } from './toolPickerSelection';
 
 export type TeamOption = { value: string; label: string };
 
@@ -67,7 +68,11 @@ type Props = {
 /**
  * A checkbox list of tools a member may use, hidden behind a button until the
  * member cares for it: an always-open grid of every skill would drown the
- * editor, while the collapsed button still shows how much was picked.
+ * editor, while the collapsed button still shows how much was picked. The
+ * list is an allow-list — nothing picked means no narrowing — so the header
+ * says so whenever the selection is empty, and the bulk action flips the
+ * whole list at once. Selecting every tool is still a restriction: a tool
+ * installed later stays outside the list.
  */
 const ToolPicker: React.FC<{
   label: string;
@@ -75,8 +80,11 @@ const ToolPicker: React.FC<{
   options: TeamOption[];
   selected: readonly string[];
   onToggle: (value: string) => void;
-}> = ({ label, emptyLabel, options, selected, onToggle }) => {
+  onReplace: (next: string[]) => void;
+}> = ({ label, emptyLabel, options, selected, onToggle, onReplace }) => {
+  const { t } = useI18n();
   const [open, setOpen] = React.useState(false);
+  const everything = isEveryOptionSelected(options, selected);
   return (
     <div className="rounded-md border border-border">
       <button
@@ -92,15 +100,37 @@ const ToolPicker: React.FC<{
         <div className="max-h-32 space-y-0.5 overflow-y-auto border-t border-border px-2 py-1.5">
           {options.length === 0 ? (
             <div className="py-1 text-xs text-muted-foreground">{emptyLabel}</div>
-          ) : options.map((option) => (
-            <label key={option.value} className="flex cursor-pointer items-center gap-2 text-xs">
-              <Checkbox
-                checked={selected.includes(option.value)}
-                onChange={() => onToggle(option.value)}
-              />
-              <span className="truncate">{option.label}</span>
-            </label>
-          ))}
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-2 pb-1">
+                {selected.length === 0 ? (
+                  <span className="min-w-0 text-[11px] leading-tight text-muted-foreground">
+                    {t('team.create.member.toolsNoRestriction')}
+                  </span>
+                ) : <span aria-hidden className="min-w-0 flex-1" />}
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto shrink-0 px-0 py-0 text-xs"
+                  onClick={() => onReplace(everything ? [] : everyOptionValue(options))}
+                >
+                  {everything
+                    ? t('team.create.member.toolsClearAll')
+                    : t('team.create.member.toolsSelectAll')}
+                </Button>
+              </div>
+              {options.map((option) => (
+                <label key={option.value} className="flex cursor-pointer items-center gap-2 text-xs">
+                  <Checkbox
+                    checked={selected.includes(option.value)}
+                    onChange={() => onToggle(option.value)}
+                  />
+                  <span className="truncate">{option.label}</span>
+                </label>
+              ))}
+            </>
+          )}
         </div>
       ) : null}
     </div>
@@ -293,6 +323,7 @@ export const TeamMemberEditor: React.FC<Props> = ({
                 options={skillOptions}
                 selected={member.skills}
                 onToggle={(value) => patch(index, { skills: toggleInList(member.skills, value) })}
+                onReplace={(next) => patch(index, { skills: next })}
               />
               <ToolPicker
                 label={t('team.create.member.mcp')}
@@ -300,6 +331,7 @@ export const TeamMemberEditor: React.FC<Props> = ({
                 options={mcpOptions}
                 selected={member.mcpServers}
                 onToggle={(value) => patch(index, { mcpServers: toggleInList(member.mcpServers, value) })}
+                onReplace={(next) => patch(index, { mcpServers: next })}
               />
             </div>
           </div>
