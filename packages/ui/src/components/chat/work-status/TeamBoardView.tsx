@@ -16,6 +16,7 @@ import {
   type TeamTaskStatus,
 } from '@/lib/team/team-board-api';
 import { TeamEditDialog } from '@/components/session/team/TeamEditDialog';
+import { TeamTaskDetailsDialog } from './TeamTaskDetailsDialog';
 
 const GROUPING_STORAGE_KEY = 'oc.teamBoard.grouping.v1';
 
@@ -84,6 +85,7 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
   const [grouping, setGrouping] = React.useState<BoardGroupingMode>(readStoredGrouping);
   const [editOpen, setEditOpen] = React.useState(false);
+  const [detailTaskId, setDetailTaskId] = React.useState<string | null>(null);
 
   const openMemberSession = React.useCallback((member: TeamMember) => {
     if (!directory) return;
@@ -120,6 +122,11 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
   }
 
   const nameOf = (slotId: string) => board.members.find((member) => member.slotId === slotId)?.name ?? slotId;
+
+  // Клик по карточке открывает диалог; данные берутся с доски на каждом
+  // рендере, поэтому статус в открытом диалоге живёт вместе с доской.
+  const subjectOf = (taskId: string) => board.tasks.find((entry) => entry.taskId === taskId)?.subject ?? taskId;
+  const detailTask = detailTaskId ? board.tasks.find((task) => task.taskId === detailTaskId) ?? null : null;
 
   const tasksByStatus = new Map<TeamTaskStatus, TeamTask[]>(
     COLUMN_STATUSES.map((status) => [status, sortTasks(board.tasks.filter((task) => task.status === status))]),
@@ -192,10 +199,12 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
     // card keeps its blockedBy history but must not read as blocked.
     const waiting = task.status === 'pending' && task.blockedBy.length > 0;
     return (
-      <div
+      <button
+        type="button"
         key={task.taskId}
         title={describeTask(task)}
-        className="rounded-lg border border-border bg-[var(--surface-muted)]/40 p-2 shadow-sm"
+        onClick={() => setDetailTaskId(task.taskId)}
+        className="rounded-lg border border-border bg-[var(--surface-muted)]/40 p-2 text-left shadow-sm transition-colors hover:bg-[var(--surface-muted)]/70 focus-visible:outline-2 focus-visible:outline-offset-1"
       >
         <div className="flex items-start gap-1.5">
           {showStatusIcon ? (
@@ -215,7 +224,7 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
             ) : null}
           </div>
         ) : null}
-      </div>
+      </button>
     );
   };
 
@@ -376,6 +385,16 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
           onOpenChange={setEditOpen}
           board={board}
           directory={directory}
+        />
+      ) : null}
+
+      {detailTask ? (
+        <TeamTaskDetailsDialog
+          open
+          onOpenChange={(next) => { if (!next) setDetailTaskId(null); }}
+          task={detailTask}
+          nameOf={nameOf}
+          subjectOf={subjectOf}
         />
       ) : null}
     </div>
