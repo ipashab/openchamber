@@ -158,4 +158,66 @@ describe('team routes', () => {
     expect(() => registerTeamRoutes(makeApp(), { teamPresets: makePresets() })).toThrow(/team service/);
     expect(() => registerTeamRoutes(makeApp(), { teamService: makeService() })).toThrow(/preset store/);
   });
+
+  it('adds a member to a live team on POST /api/openchamber/teams/:teamId/members', async () => {
+    const app = makeApp();
+    const service = makeService();
+    service.addMemberFromUi = vi.fn(async ({ teamId, input }) => {
+      expect(teamId).toBe('team_1');
+      expect(input.name).toBe('Новый');
+      expect(input.domain).toBe('qa');
+      return { member: { slotId: 'member_1', name: 'Новый', status: 'starting' } };
+    });
+    registerTeamRoutes(app, { teamService: service, teamPresets: makePresets() });
+
+    const res = makeRes();
+    await findRoute(app, 'POST', '/api/openchamber/teams/:teamId/members')
+      .handler({ params: { teamId: 'team_1' }, body: { name: 'Новый', domain: 'qa' } }, res);
+    expect(res.statusCode).toBe(201);
+    expect(res.body.member.slotId).toBe('member_1');
+    expect(service.addMemberFromUi).toHaveBeenCalledTimes(1);
+  });
+
+  it('forwards TeamError status codes from member mutations and shutdown requests', async () => {
+    const app = makeApp();
+    const service = makeService();
+    const conflict = new Error('A teammate named ’Новый’ already exists in this team');
+    conflict.statusCode = 409;
+    service.addMemberFromUi = vi.fn(async () => { throw conflict; });
+    service.shutdownMemberFromUi = vi.fn(async () => {
+      const missing = new Error("No active member with slotId 'member_x'");
+      missing.statusCode = 404;
+      throw missing;
+    });
+    registerTeamRoutes(app, { teamService: service, teamPresets: makePresets() });
+
+    const addRes = makeRes();
+    await findRoute(app, 'POST', '/api/openchamber/teams/:teamId/members')
+      .handler({ params: { teamId: 'team_1' }, body: { name: 'Новый' } }, addRes);
+    expect(addRes.statusCode).toBe(409);
+    expect(addRes.body.error).toContain('already exists');
+
+    const shutdownRes = makeRes();
+    await findRoute(app, 'POST', '/api/openchamber/teams/:teamId/members/:slotId/shutdown')
+      .handler({ params: { teamId: 'team_1', slotId: 'member_x' }, body: { reason: 'не нужен' } }, shutdownRes);
+    expect(shutdownRes.statusCode).toBe(404);
+    expect(service.shutdownMemberFromUi).toHaveBeenCalledWith({
+      teamId: 'team_1',
+      slotId: 'member_x',
+      reason: 'не нужен',
+    });
+  });
+
+  it('requests a member shutdown through the approval handshake', async () => {
+    const app = makeApp();
+    const service = makeService();
+    service.shutdownMemberFromUi = vi.fn(async () => ({ requested: true }));
+    registerTeamRoutes(app, { teamService: service, teamPresets: makePresets() });
+
+    const res = makeRes();
+    await findRoute(app, 'POST', '/api/openchamber/teams/:teamId/members/:slotId/shutdown')
+      .handler({ params: { teamId: 'team_1', slotId: 'member_1' }, body: {} }, res);
+    expect(res.statusCode).toBeNull();
+    expect(res.body).toEqual({ requested: true });
+  });
 });

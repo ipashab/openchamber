@@ -25,6 +25,26 @@ the existing Subagents panel of the lead session already shows every member's
 live status, running time and failures — no new UI. The sessions are the
 user's; the coordination state is OpenChamber's own.
 
+## Sub-teams
+
+A member may carry a `domain` — one of `analytics`, `development`, `review`,
+`qa` — and at most one member per domain carries `isDomainLead: true`. The
+Team Lead itself never belongs to a domain. One team, one board, one mailbox:
+the domain is a chain of command, not separate state.
+
+- A domain member's session nests under its domain lead's session (the lead's
+  under the Team Lead), so the session tree shows the hierarchy.
+- Reports travel the chain: a domain member's `send_message` to its domain
+  lead and its idle `producedForLeader` notifications address the domain
+  lead; the domain lead aggregates the domain and answers the Team Lead, who
+  synthesizes for the user. Failures and stalls stay Team Lead news —
+  staffing and dismissal are lead-only actions.
+- The briefing says which: domain members get their sub-team lead's slot,
+  domain leads get their domain roster and the "one consolidated report to
+  the Team Lead" rule, the Team Lead gets the sub-team dispatch section.
+- The shutdown approval line is accepted addressed to the Team Lead or to the
+  member's domain lead, wherever the briefing pointed it.
+
 ## The tool
 
 The tool is a fifth entry in the managed agent-tool plugin (`runtime.js` in
@@ -99,6 +119,17 @@ outside any team render nothing, so the section costs a session nothing.
 Team changes broadcast on the OpenChamber UI event stream as
 `openchamber:team-created`, `-members`, `-mailbox`, `-task`, `-status` for
 clients that want a scoreboard.
+
+The app's own team management rides the same routes:
+
+- `POST /api/openchamber/teams` — a team created from the "New Team" dialog;
+  the member cards may carry `domain` and `isDomainLead` like any spawn.
+- `POST /api/openchamber/teams/:teamId/members` — the live-roster editor:
+  one member added to a running team, walking the spawn path with the card's
+  tool allowances (skills, MCP servers) applied as session permissions.
+- `POST /api/openchamber/teams/:teamId/members/:slotId/shutdown` — the
+  dismissal button of the live-roster editor; the same approval handshake
+  the lead tool uses, requested by the user.
 
 ## Test seams
 

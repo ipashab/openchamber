@@ -6,6 +6,9 @@ import { z } from 'zod';
 
 import { runtimeFetch } from '@/lib/runtime-fetch';
 
+import { teamDomainSchema } from './team-board-api';
+import type { TeamDomain } from './team-board-api';
+
 const PRESETS_ROUTE = '/api/openchamber/team-presets';
 const TEAMS_ROUTE = '/api/openchamber/teams';
 
@@ -18,6 +21,11 @@ export const teamPresetMemberSchema = z.object({
   skills: z.array(z.string()).catch([]),
   mcpServers: z.array(z.string()).catch([]),
   isLead: z.boolean().catch(false),
+  // Sub-team placement: the domain plus the "leads this sub-team" flag.
+  // Nullish and caught — older servers omit them and unknown ids mean no
+  // sub-team, never a failed fetch.
+  domain: teamDomainSchema.nullish().catch(null),
+  isDomainLead: z.boolean().nullish().catch(false),
 });
 
 export const teamPresetSchema = z.object({
@@ -39,6 +47,8 @@ export const teamCreateResultSchema = z.object({
     slotId: z.string(),
     name: z.string(),
     role: z.enum(['lead', 'teammate']),
+    domain: teamDomainSchema.nullish().catch(null),
+    isDomainLead: z.boolean().nullish().catch(false),
     status: z.string(),
   })),
 });
@@ -58,6 +68,10 @@ export type TeamCreateMember = {
   skills?: string[];
   mcpServers?: string[];
   isLead?: boolean;
+  // Nullish: a preset member may carry the absent state in either flavor,
+  // the schema's catch makes no distinction between them.
+  domain?: TeamDomain | null;
+  isDomainLead?: boolean | null;
 };
 
 /** A team as the create route wants it: a preset plus where it works. */
@@ -141,4 +155,62 @@ export const createTeam = async (
     throw new Error('Team creation response did not match the expected shape');
   }
   return parsed.data;
+};
+
+const teamMemberMutationSchema = z.object({
+  slotId: z.string(),
+  name: z.string(),
+  role: z.enum(['lead', 'teammate']),
+  domain: teamDomainSchema.nullish().catch(null),
+  isDomainLead: z.boolean().nullish().catch(false),
+  status: z.string(),
+});
+
+/**
+ * The "Edit team" flow: add one member to a live roster. The server walks the
+ * spawn path with the same tool allowances the creation dialog applies, so
+ * this resolves once the session exists and its briefing was dispatched.
+ */
+export const addTeamMember = async (
+  teamId: string,
+  member: TeamCreateMember,
+  fetchImpl: typeof runtimeFetch = runtimeFetch,
+): Promise<z.infer<typeof teamMemberMutationSchema>> => {
+  const response = await fetchImpl(`${TEAMS_ROUTE}/${encodeURIComponent(teamId)}/members`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(member),
+  });
+  if (!response.ok) {
+    throw new Error(await readRouteError(response, 'Adding the member failed'));
+  }
+  const body = await response.json().catch(() => null);
+  const parsed = z.object({ member: teamMemberMutationSchema }).safeParse(body);
+  if (!parsed.success) {
+    throw new Error('Member add response did not match the expected shape');
+  }
+  return parsed.data.member;
+};
+
+/**
+ * Ask a member to shut down. The approval handshake stays on the team channel:
+ * resolve only says the request was delivered, not that the member agreed.
+ */
+export const requestTeamMemberShutdown = async (
+  teamId: string,
+  slotId: string,
+  reason?: string | null,
+  fetchImpl: typeof runtimeFetch = runtimeFetch,
+): Promise<void> => {
+  const response = await fetchImpl(
+    `${TEAMS_ROUTE}/${encodeURIComponent(teamId)}/members/${encodeURIComponent(slotId)}/shutdown`,
+    {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ reason: reason ?? null }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await readRouteError(response, 'Shutdown request failed'));
+  }
 };

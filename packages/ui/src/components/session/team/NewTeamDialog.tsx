@@ -39,6 +39,8 @@ const blankMember = (): TeamPresetMember => ({
   skills: [],
   mcpServers: [],
   isLead: true,
+  domain: null,
+  isDomainLead: false,
 });
 
 /**
@@ -93,6 +95,8 @@ export const NewTeamDialog: React.FC<Props> = ({ open, onOpenChange }) => {
       skills: member.skills ?? [],
       mcpServers: member.mcpServers ?? [],
       isLead: member.isLead ?? false,
+      domain: member.domain ?? null,
+      isDomainLead: member.isDomainLead ?? false,
     })));
     setStep('edit');
   };

@@ -49,8 +49,39 @@ const clip = (text, limit = MESSAGE_CONTENT_LIMIT) => {
 
 const slotLabel = (member) => `${member.name} (slot_id: ${member.slotId})`;
 
+/**
+ * How the Team Lead dispatches when sub-teams exist: through their leads, who
+ * own their area and return one consolidated report. Rendered only when the
+ * roster actually carries domains.
+ */
+const subTeamsSection = (members) => {
+  const domainMembers = members.filter((member) => member.domain);
+  if (domainMembers.length === 0) return '';
+  const lines = domainMembers
+    .map((member) => (member.isDomainLead
+      ? `- ${member.domain}: led by ${slotLabel(member)}`
+      : `- ${member.domain}: ${member.name} (reports to its sub-team lead)`))
+    .join('\n');
+  return `
+## Sub-Teams
+${lines}
+
+Dispatch a sub-team's work to its sub-team lead: they break it down inside
+their area, supervise their mates and return one consolidated report. Speak
+with a sub-team's workers directly only for small asks; the sub-team lead
+owns the area's result. Reports travel the chain — worker to sub-team lead,
+sub-team lead to you — and you synthesize the final answer for the user
+yourself. Staffing, interrupts and dismissals stay yours.
+`;
+};
+
 const rosterSection = (members) => members
-  .map((member) => `- ${slotLabel(member)} — role: ${member.role}${member.removed ? ' [dismissed]' : ''}`)
+  .map((member) => {
+    const domain = member.domain
+      ? `, sub-team: ${member.domain}${member.isDomainLead ? ' (sub-team lead)' : ''}`
+      : '';
+    return `- ${slotLabel(member)} — role: ${member.role}${domain}${member.removed ? ' [dismissed]' : ''}`;
+  })
   .join('\n');
 
 const boardSummary = (tasks) => {
@@ -90,7 +121,7 @@ Role: lead
 ## Your Team Roster
 ${rosterSection(teamMembers) || '- (no teammates yet)'}
 
-${TOOL_USAGE}
+${subTeamsSection(teamMembers)}${TOOL_USAGE}
 
 ## How You Work
 1. Receive the user's request. If the user explicitly asked YOU to implement,
@@ -138,8 +169,31 @@ Do not announce the firing in a chat message instead.
 };
 
 /** A teammate's first prompt: its briefing, delivered as the wake payload. */
-export const buildTeammateBriefing = ({ team, member, lead, brief }) => {
+export const buildTeammateBriefing = ({ team, member, lead, brief, reportTo = null }) => {
   const briefLine = brief ? `\nYour responsibility, from the Team Lead: ${brief}` : '';
+  const reportLead = reportTo ?? lead;
+  const domainLine = member.domain
+    ? `\nSub-team: ${member.domain}${member.isDomainLead ? ' (you lead it)' : ''}`
+    : '';
+  const reportsLine = reportTo
+    ? `\nYour sub-team lead: ${slotLabel(reportTo)} — report your results there, not to the Team Lead. The sub-team lead aggregates and reports up; the Team Lead stays the owner of the user's answer`
+    : '';
+  const domainLeadSection = member.isDomainLead
+    ? `
+
+## You Lead the '${member.domain}' Sub-Team
+Your sub-team roster:
+${rosterSection(team.members.filter((entry) => entry.domain === member.domain && entry.slotId !== member.slotId && entry.removed !== true)) || '- (nobody in the sub-team yet; message the Team Lead when you need hands)'}
+1. Decompose the assigned work among your sub-team: team.task_create with
+   owner wakes the owner with the task details.
+2. Their reports reach you, not the Team Lead: review and validate them
+   inside your area, then send ONE consolidated result to the Team Lead
+   slot_id (${lead.slotId}).
+3. The user never sees your answer directly; the Team Lead synthesizes.
+4. You do not staff the sub-team and cannot dismiss members — those are the
+   Team Lead's. Message the Team Lead when you need more hands or a member
+   must go.`
+    : '';
   return `${GOVERNANCE}
 
 ## You are a Team Member
@@ -148,7 +202,7 @@ export const buildTeammateBriefing = ({ team, member, lead, brief }) => {
 Name: ${member.name}
 Slot ID: ${member.slotId}
 Team: ${team.name}
-Leader: ${lead.name} (slot_id: ${lead.slotId})${briefLine}
+Leader: ${lead.name} (slot_id: ${lead.slotId})${domainLine}${reportsLine}${briefLine}${domainLeadSection}
 
 ${TOOL_USAGE}
 
@@ -159,13 +213,13 @@ ${TOOL_USAGE}
    team.task_update it to in_progress.
 3. Do the actual work with your own tools (read, write, bash and the rest).
 4. When done, team.task_update the task to completed.
-5. Report the result to the Team Lead slot_id with team.send_message, including
+5. Report the result to the ${reportTo ? 'sub-team lead' : 'Team Lead'} slot_id (${reportLead.slotId}) with team.send_message, including
    a summary of what you did. Focus on your assignment; if you get stuck,
-   message the lead for guidance instead of improvising outside your scope.
+   message ${reportTo ? 'your sub-team lead' : 'the lead'} for guidance instead of improvising outside your scope.
 
 ## Standing By
 When you finish your task and nothing else is assigned, optionally send ONE
-short acknowledgement to the lead slot_id ("done, standing by"), then STOP
+short acknowledgement to the ${reportLead.slotId} slot ("done, standing by"), then STOP
 GENERATING and end your turn. Never keep a turn open while waiting.
 
 ## Shutdown Requests
@@ -180,7 +234,7 @@ refuse, send shutdown_rejected: <your reason>.
  * A message that would blow the context budget is clipped and stays unread
  * for full delivery next turn.
  */
-export const buildWakePayload = ({ member, team, messages, tasks }) => {
+export const buildWakePayload = ({ member, team, messages, tasks, reportTo = null }) => {
   const addressed = messages.slice(0, WAKE_LIMIT_PER_TURN);
   const lines = addressed.length > 0
     ? addressed
@@ -197,6 +251,6 @@ ${lines}
 ${boardSummary(tasks)}
 
 You are ${member.name} (role: ${member.role}), member of team "${team.name}".
-Proceed with your work. Use team.read_messages for the full mailbox and
+${reportTo ? `Report your results to your sub-team lead ${reportTo.name} (slot_id: ${reportTo.slotId}).\n` : ''}Proceed with your work. Use team.read_messages for the full mailbox and
 team.read_messages again before finishing your turn.`;
 };

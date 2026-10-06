@@ -1,4 +1,4 @@
-import { resolveTeamAction, isLeadOnlyTeamAction } from './tools.js';
+import { resolveTeamAction, isLeadOnlyTeamAction, TEAM_DOMAIN_IDS } from './tools.js';
 import {
   buildLeadBriefing,
   buildTeammateBriefing,
@@ -43,6 +43,12 @@ const SHUTDOWN_APPROVED = 'shutdown_approved';
 
 const MEMBER_STATUSES = new Set(['starting', 'busy', 'idle', 'failed', 'shut_down']);
 
+// Sub-teams: an area label a teammate carries plus one lead per area. A
+// domain member reports to its domain lead, the domain lead aggregates and
+// reports to the Team Lead. One team, one board — the domain is a chain of
+// command, not separate state.
+const TEAM_DOMAINS = new Set(TEAM_DOMAIN_IDS);
+
 const asNonEmptyString = (value) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -71,6 +77,8 @@ const serializeMember = (member) => ({
   slotId: member.slotId,
   name: member.name,
   role: member.role,
+  domain: TEAM_DOMAINS.has(member.domain) ? member.domain : null,
+  isDomainLead: member.isDomainLead === true,
   sessionId: member.sessionId,
   agent: member.agent ?? null,
   model: member.model ?? null,
@@ -299,7 +307,7 @@ export const createTeamService = (dependencies) => {
       ...asList(member.deliveredIds),
       ...unread.map((message) => message.id),
     ]));
-    const prompt = buildWakePayload({ team, member, messages: unread, tasks: team.tasks });
+    const prompt = buildWakePayload({ team, member, messages: unread, tasks: team.tasks, reportTo: reportToMember(team, member) });
     try {
       await sessionService.send(member.sessionId, { prompt, directory: team.directory });
       member.status = 'busy';
@@ -322,7 +330,61 @@ export const createTeamService = (dependencies) => {
     await wakeMember(team, lead).catch(() => {});
   };
 
+  /**
+   * The domain chain's report channel: a member that produced something
+   * announces it to its domain lead when it has one, else to the Team Lead.
+   * Failures and stalls stay Team Lead news via notifyLead — staffing and
+   * dismissal are lead-only actions.
+   */
+  const notifyReporter = async (team, member, { type = 'idle_notification', content, summary = null } = {}) => {
+    const target = reportToMember(team, member)
+      ?? team.members.find((candidate) => candidate.slotId === SLOT_LEADER);
+    if (!target || target.removed) return;
+    pushMessage(team, { to: target.slotId, from: member.slotId, type, content, summary });
+    await wakeMember(team, target).catch(() => {});
+  };
+
   const activeMembers = (team) => team.members.filter((member) => member.removed !== true && member.slotId !== SLOT_LEADER);
+
+  /** The active lead of a sub-team domain, or null when the domain has none. */
+  const domainLeadOf = (team, domain) => (
+    TEAM_DOMAINS.has(domain)
+      ? team.members.find((entry) => (
+        entry.domain === domain && entry.isDomainLead === true
+        && entry.removed !== true && entry.slotId !== SLOT_LEADER
+      )) ?? null
+      : null
+  );
+
+  /**
+   * Reads domain input: an unknown or missing domain is nothing, and leading
+   * a domain requires belonging to it. Returns the normalized pair.
+   */
+  const normalizeDomainInput = (input) => {
+    const domain = TEAM_DOMAINS.has(input?.domain) ? input.domain : null;
+    return { domain, isDomainLead: domain !== null && input?.isDomainLead === true };
+  };
+
+  const lineupDomainLeads = (memberInputs) => {
+    const seen = new Set();
+    for (const entry of memberInputs) {
+      if (!entry.isDomainLead || !entry.domain) continue;
+      if (seen.has(entry.domain)) {
+        throw new TeamError(`two members are marked as the lead of the '${entry.domain}' sub-team`, 400);
+      }
+      seen.add(entry.domain);
+    }
+  };
+
+  /**
+   * Where a member's reports go: a domain member with an active domain lead
+   * reports there; everybody else — straight to the Team Lead.
+   */
+  const reportToMember = (team, member) => {
+    if (member.role !== 'teammate' || member.isDomainLead === true) return null;
+    const domainLead = domainLeadOf(team, member.domain);
+    return domainLead && domainLead.slotId !== member.slotId ? domainLead : null;
+  };
 
   const touchActivity = (team, member) => {
     member.lastActivityAt = now();
@@ -354,8 +416,7 @@ export const createTeamService = (dependencies) => {
     member.producedForLeader = false;
     schedulePersist();
     if (producedForLead && member.role !== 'lead') {
-      await notifyLead(team, {
-        from: member.slotId,
+      await notifyReporter(team, member, {
         content: `${member.name} finished a turn with something for you. Read your mailbox (team.read_messages) and decide the next step.`,
         summary: summaryOf(team, member),
       }).catch(() => {});
@@ -479,6 +540,7 @@ export const createTeamService = (dependencies) => {
       skills: asList(entry?.skills).map((skill) => asNonEmptyString(skill)).filter(Boolean),
       mcpServers: asList(entry?.mcpServers).map((server) => asNonEmptyString(server)).filter(Boolean),
       isLead: entry?.isLead === true,
+      ...normalizeDomainInput(entry),
     }));
     if (memberInputs.length === 0) throw new TeamError('at least one member is required', 400);
     if (memberInputs.some((entry) => !entry.name)) throw new TeamError('every member needs a name', 400);
@@ -491,7 +553,13 @@ export const createTeamService = (dependencies) => {
     }
     const flaggedLeads = memberInputs.filter((entry) => entry.isLead);
     if (flaggedLeads.length > 1) throw new TeamError('only one member can be the team lead', 400);
+    // One sub-team, one lead — checked before any session is paid for.
+    lineupDomainLeads(memberInputs);
     const leadInput = flaggedLeads[0] ?? memberInputs[0];
+    // The Team Lead leads the team, not a sub-team: its domain fields are
+    // input noise, never a shape the roster should record.
+    leadInput.domain = null;
+    leadInput.isDomainLead = false;
     const teammateInputs = memberInputs.filter((entry) => entry !== leadInput);
 
     await waitForOpenCodeReady(10_000, 250).catch(() => {});
@@ -515,14 +583,7 @@ export const createTeamService = (dependencies) => {
     }
     // The gate is a deny-list over the servers this instance actually knows,
     // so a member may keep everything except what the user deselected.
-    let serverNames = [];
-    try {
-      const mcpResponse = await client.mcp?.list?.({ location: { directory } });
-      serverNames = asList(mcpResponse?.data).map((server) => asNonEmptyString(server?.name)).filter(Boolean);
-    } catch {
-      // No server catalog means no server-specific rules; the member keeps
-      // whatever its agent's own permissions allow.
-    }
+    const serverNames = await listMcpServerNames(client, directory);
 
     const team = {
       id: shortId('team'),
@@ -586,7 +647,15 @@ export const createTeamService = (dependencies) => {
     schedulePersist();
     broadcast('openchamber:team-created', { teamId: team.id, name: team.name });
 
-    for (const entry of teammateInputs) {
+    // Sub-team leads are created first so a domain member's parent session —
+    // its domain lead — exists by the time the member is created.
+    const orderedTeammates = [
+      ...teammateInputs.filter((entry) => entry.isDomainLead === true),
+      ...teammateInputs.filter((entry) => entry.isDomainLead !== true),
+    ];
+    const domainLeadSessionIds = new Map();
+
+    for (const entry of orderedTeammates) {
       const slotId = shortId('member');
       let sessionId = null;
       try {
@@ -598,8 +667,11 @@ export const createTeamService = (dependencies) => {
           model: entry.model,
           skills: entry.skills,
           mcpServers: entry.mcpServers,
-          parentID: leadSessionId,
+          // A domain member's session nests under its domain lead, so the
+          // lead's session must exist first — orderedTeammates guarantees that.
+          parentID: (!entry.isDomainLead && entry.domain && domainLeadSessionIds.get(entry.domain)) || leadSessionId,
         });
+        if (entry.isDomainLead && sessionId) domainLeadSessionIds.set(entry.domain, sessionId);
       } catch (error) {
         // A member whose session the provider refused to create stays on the
         // roster as failed: the team and the rest of the lineup survive.
@@ -609,6 +681,8 @@ export const createTeamService = (dependencies) => {
         slotId,
         name: entry.name,
         role: 'teammate',
+        domain: entry.domain,
+        isDomainLead: entry.isDomainLead === true,
         sessionId,
         agent: entry.agent,
         model: entry.model,
@@ -650,7 +724,7 @@ export const createTeamService = (dependencies) => {
 
     for (const member of team.members) {
       if (member.slotId === SLOT_LEADER || !member.sessionId) continue;
-      const briefing = `${buildTeammateBriefing({ team, member, lead, brief: member.brief })}\n\nThe team was created from the app before any task was given. Do not invent work: acknowledge readiness in ONE short sentence and end your turn; your first task arrives as a wake-up message.`;
+      const briefing = `${buildTeammateBriefing({ team, member, lead, brief: member.brief, reportTo: reportToMember(team, member) })}\n\nThe team was created from the app before any task was given. Do not invent work: acknowledge readiness in ONE short sentence and end your turn; your first task arrives as a wake-up message.`;
       try {
         await sessionService.send(member.sessionId, {
           prompt: briefing,
@@ -675,9 +749,23 @@ export const createTeamService = (dependencies) => {
         slotId: member.slotId,
         name: member.name,
         role: member.role,
+        domain: member.domain ?? null,
+        isDomainLead: member.isDomainLead === true,
         status: member.status,
       })),
     };
+  };
+
+  /** MCP server names of this instance, for the per-member permission gate. */
+  const listMcpServerNames = async (client, directory) => {
+    try {
+      const response = await client.mcp?.list?.({ location: { directory } });
+      return asList(response?.data).map((server) => asNonEmptyString(server?.name)).filter(Boolean);
+    } catch {
+      // No server catalog means no server-specific rules; the member keeps
+      // whatever its agent's own permissions allow.
+      return [];
+    }
   };
 
   const fetchAgentCatalog = async (directory) => {
@@ -735,6 +823,11 @@ export const createTeamService = (dependencies) => {
     if (!name) throw new TeamError('name is required: the teammate\'s display name', 400);
     const agent = asNonEmptyString(input.agent) || 'build';
     const model = asNonEmptyString(input.model);
+    const { domain, isDomainLead } = normalizeDomainInput(input);
+    if (isDomainLead) {
+      const existing = domainLeadOf(team, domain);
+      if (existing) throw new TeamError(`'${existing.name}' already leads the '${domain}' sub-team`, 409);
+    }
 
     const { agents, models, client } = await fetchAgentCatalog(team.directory);
     if (agents.length > 0) {
@@ -760,8 +853,12 @@ export const createTeamService = (dependencies) => {
     const lead = team.members.find((entry) => entry.slotId === SLOT_LEADER) ?? member;
     const slotId = shortId('member');
     const title = `${team.name} · ${name}`.slice(0, 120);
+    // A domain member nests under its domain lead's session when one exists; a
+    // domain lead (or an unassigned teammate) nests under the lead.
+    const domainLead = isDomainLead ? null : domainLeadOf(team, domain);
+    const parentID = domainLead?.sessionId ?? lead.sessionId;
     const session = await client.session.create({
-      parentID: lead.sessionId,
+      parentID,
       title,
       location: { directory: team.directory },
       metadata: { openchamber: { team: { id: team.id, version: 1, slotId, role: 'teammate', name } } },
@@ -775,6 +872,8 @@ export const createTeamService = (dependencies) => {
       slotId,
       name,
       role: 'teammate',
+      domain,
+      isDomainLead,
       sessionId,
       agent,
       model: model || null,
@@ -793,7 +892,7 @@ export const createTeamService = (dependencies) => {
     // The briefing is the teammate's first prompt: identity, rules, the lead's
     // slot id. Sent through the shared dispatch so model/agent validation and
     // snippet expansion behave like any other send.
-    const briefing = buildTeammateBriefing({ team, member: teammate, lead, brief: teammate.brief });
+    const briefing = buildTeammateBriefing({ team, member: teammate, lead, brief: teammate.brief, reportTo: reportToMember(team, teammate) });
     try {
       await sessionService.send(sessionId, {
         prompt: briefing,
@@ -811,8 +910,15 @@ export const createTeamService = (dependencies) => {
 
     broadcast('openchamber:team-members', { teamId: team.id, change: 'spawned', slotId });
     return {
-      member: { slotId: teammate.slotId, name: teammate.name, role: teammate.role, status: teammate.status },
-      note: `${name} joined the team and received its briefing. It appears under the Subagents panel of the lead session; assign work with team.task_create (owner) or team.send_message.`,
+      member: {
+        slotId: teammate.slotId,
+        name: teammate.name,
+        role: teammate.role,
+        domain: teammate.domain,
+        isDomainLead: teammate.isDomainLead,
+        status: teammate.status,
+      },
+      note: `${name} joined the team and received its briefing.${domain ? ` It belongs to the '${domain}' sub-team${isDomainLead ? ' and leads it' : ''}.` : ''} It appears under the Subagents panel of its parent session; assign work with team.task_create (owner) or team.send_message.`,
     };
   };
 
@@ -834,19 +940,24 @@ export const createTeamService = (dependencies) => {
     if (!to) throw new TeamError('to is required: a slotId from team.members, or "*" for the whole team', 400);
     if (!message) throw new TeamError('message is required', 400);
 
+    const reportTo = reportToMember(team, member);
+
     // The shutdown handshake rides on ordinary mail: an exact approval line
-    // from a teammate retires the member, a refusal is delivered as-is.
-    if (member.role === 'teammate' && to === SLOT_LEADER && message.trim() === SHUTDOWN_APPROVED) {
+    // from a teammate retires the member, a refusal is delivered as-is. The
+    // reply goes wherever the briefing said — the domain lead for domain
+    // members, the Team Lead for the rest.
+    if (member.role === 'teammate' && message.trim() === SHUTDOWN_APPROVED
+      && (to === SLOT_LEADER || (reportTo && to === reportTo.slotId))) {
       member.removed = true;
       member.status = 'shut_down';
       schedulePersist();
       broadcast('openchamber:team-members', { teamId: team.id, change: 'shut_down', slotId: member.slotId });
     }
 
-    // The teammate has produced something for the lead: its turn end drops an
-    // idle notification into the lead's mailbox (the lead was also woken by
-    // the message itself; this is the "I am done" half of the contract).
-    if (member.role === 'teammate' && to === SLOT_LEADER) member.producedForLeader = true;
+    // The teammate has produced something for its reporting lead: its turn end
+    // drops an idle notification there (the lead was also woken by the message
+    // itself; this is the "I am done" half of the contract).
+    if (member.role === 'teammate' && (to === SLOT_LEADER || (reportTo && to === reportTo.slotId))) member.producedForLeader = true;
     if (member.role === 'teammate' && to === '*') {
       const lead = team.members.find((candidate) => candidate.slotId === SLOT_LEADER);
       if (lead && lead.slotId !== member.slotId) member.producedForLeader = true;
@@ -902,6 +1013,8 @@ export const createTeamService = (dependencies) => {
           slotId: candidate.slotId,
           name: candidate.name,
           role: candidate.role,
+          domain: candidate.domain ?? null,
+          isDomainLead: candidate.isDomainLead === true,
           status: candidate.removed ? 'shut_down' : candidate.status,
         })),
     };
@@ -948,25 +1061,160 @@ export const createTeamService = (dependencies) => {
     return { interrupted: false, note: `${record.name} was idle; the instruction was delivered as its next wake.` };
   };
 
-  const actionShutdownAgent = async (input, membership) => {
-    const { team, member } = membership;
-    const slotId = asNonEmptyString(input.slotId);
-    if (!slotId) throw new TeamError('slotId is required', 400);
-    const record = requireSlot(team, slotId);
-    const reason = asNonEmptyString(input.reason);
+  /** The shared shutdown-request delivery for the lead tool and the app UI. */
+  const requestShutdown = async (team, fromSlotId, record, reason) => {
     pushMessage(team, {
       to: record.slotId,
-      from: member.slotId,
+      from: fromSlotId,
       type: 'shutdown_request',
       content: 'The Team Lead is asking you to shut down. Reply with exactly shutdown_approved to the lead slot_id to agree, or shutdown_rejected: <reason> to refuse.',
       summary: reason || null,
     });
     await wakeMember(team, record).catch(() => {});
-    broadcast('openchamber:team-members', { teamId: team.id, change: 'shutdown_requested', slotId });
+    broadcast('openchamber:team-members', { teamId: team.id, change: 'shutdown_requested', slotId: record.slotId });
+  };
+
+  const actionShutdownAgent = async (input, membership) => {
+    const { team, member } = membership;
+    const slotId = asNonEmptyString(input.slotId);
+    if (!slotId) throw new TeamError('slotId is required', 400);
+    const record = requireSlot(team, slotId);
+    await requestShutdown(team, member.slotId, record, asNonEmptyString(input.reason));
     return {
       requested: true,
       note: 'A shutdown request was delivered. The teammate approves with a shutdown_approved message (its session stays readable) or refuses with a reason; you will hear back either way.',
     };
+  };
+
+  /**
+   * The "Edit team" flow: add a teammate to a live roster from the app. Walks
+   * the same path as the lead's spawn tool plus the creation dialog's tool
+   * allowances, and the domain logic: a domain member nests under its domain
+   * lead when one is active, reports go through the chain.
+   */
+  const addMemberFromUi = async ({ teamId, input }) => {
+    await load();
+    const team = getTeam(asNonEmptyString(teamId));
+    if (!team) throw new TeamError(`No team with id '${teamId}'`, 404);
+    const lead = team.members.find((entry) => entry.slotId === SLOT_LEADER);
+    if (!lead?.sessionId) throw new TeamError('The lead session of this team is gone', 409);
+
+    const name = asNonEmptyString(input?.name);
+    if (!name) throw new TeamError('name is required: the teammate\'s display name', 400);
+    const agent = asNonEmptyString(input?.agent);
+    const model = asNonEmptyString(input?.model);
+    const skills = asList(input?.skills).map((skill) => asNonEmptyString(skill)).filter(Boolean);
+    const mcpServers = asList(input?.mcpServers).map((server) => asNonEmptyString(server)).filter(Boolean);
+    const { domain, isDomainLead } = normalizeDomainInput(input);
+    if (isDomainLead) {
+      const existing = domainLeadOf(team, domain);
+      if (existing) throw new TeamError(`'${existing.name}' already leads the '${domain}' sub-team`, 409);
+    }
+    if (activeMembers(team).some((entry) => entry.name === name)) {
+      throw new TeamError(`A teammate named '${name}' already exists in this team`, 409);
+    }
+    if (activeMembers(team).length >= 10) {
+      throw new TeamError('This team already has the maximum of 10 teammates', 409);
+    }
+
+    await waitForOpenCodeReady(10_000, 250).catch(() => {});
+    const { agents, models, client } = await fetchAgentCatalog(team.directory);
+    if (agent && agents.length > 0) {
+      const entry = agents.find((candidate) => candidate?.id === agent);
+      if (!entry) throw new TeamError(`Unknown agent '${agent}' for member '${name}'`, 400);
+      if (!isPrimaryAgentMode(entry.mode)) {
+        throw new TeamError(`Agent '${agent}' is a subagent and cannot run a session of its own`, 400);
+      }
+    }
+    if (model && models.length > 0) {
+      const [providerID, modelID] = model.split('/');
+      if (!modelID || !models.some((entry) => entry?.providerID === providerID && entry?.modelID === modelID)) {
+        throw new TeamError(`Unknown model '${model}' for member '${name}'. Use provider/model.`, 400);
+      }
+    }
+
+    const domainLead = isDomainLead ? null : domainLeadOf(team, domain);
+    const parentID = domainLead?.sessionId ?? lead.sessionId;
+    const slotId = shortId('member');
+    const serverNames = await listMcpServerNames(client, team.directory);
+    const session = await client.session.create({
+      parentID,
+      title: `${team.name} · ${name}`.slice(0, 120),
+      location: { directory: team.directory },
+      ...(agent ? { agent } : {}),
+      ...(model ? { model: { id: model.split('/')[1] ?? model, providerID: model.split('/')[0] } } : {}),
+      metadata: { openchamber: { team: { id: team.id, version: 1, slotId, role: 'teammate', name } } },
+      permissions: composeToolPermissionRules({ skills, mcpServers }, serverNames),
+    }).catch((error) => {
+      throw new TeamError(`OpenCode did not create the teammate session: ${error?.message ?? error}`, 502);
+    });
+    const sessionId = asNonEmptyString(session?.id);
+    if (!sessionId) throw new TeamError('OpenCode created no teammate session', 502);
+
+    const teammate = {
+      slotId,
+      name,
+      role: 'teammate',
+      domain,
+      isDomainLead,
+      sessionId,
+      agent: agent || null,
+      model: model || null,
+      brief: asNonEmptyString(input?.brief) || null,
+      skills,
+      mcpServers,
+      status: 'starting',
+      removed: false,
+      deliveredIds: [],
+      producedForLeader: false,
+      pendingWake: false,
+      lastActivityAt: now(),
+    };
+    team.members.push(teammate);
+    sessionIndex.set(sessionId, { teamId: team.id, slotId });
+    schedulePersist();
+
+    const briefing = buildTeammateBriefing({ team, member: teammate, lead, brief: teammate.brief, reportTo: reportToMember(team, teammate) });
+    try {
+      await sessionService.send(sessionId, {
+        prompt: briefing,
+        directory: team.directory,
+        ...(model ? { model } : {}),
+        ...(agent ? { agent } : {}),
+      });
+      teammate.status = 'busy';
+      teammate.lastActivityAt = now();
+    } catch (error) {
+      teammate.status = 'failed';
+      schedulePersist();
+      throw new TeamError(`The teammate session was created but its briefing did not dispatch: ${error?.message ?? error}`, 502);
+    }
+
+    broadcast('openchamber:team-members', { teamId: team.id, change: 'spawned', slotId });
+    return {
+      member: {
+        slotId: teammate.slotId,
+        name: teammate.name,
+        role: teammate.role,
+        domain: teammate.domain,
+        isDomainLead: teammate.isDomainLead,
+        status: teammate.status,
+      },
+    };
+  };
+
+  /** The "Edit team" dismissal: the lead handshake, requested by the user. */
+  const shutdownMemberFromUi = async ({ teamId, slotId, reason }) => {
+    await load();
+    const team = getTeam(asNonEmptyString(teamId));
+    if (!team) throw new TeamError(`No team with id '${teamId}'`, 404);
+    const record = team.members.find((candidate) => candidate.slotId === asNonEmptyString(slotId));
+    if (!record || record.removed) {
+      throw new TeamError(`No active member with slotId '${slotId}'`, 404);
+    }
+    if (record.slotId === SLOT_LEADER) throw new TeamError('The Team Lead cannot be dismissed', 400);
+    await requestShutdown(team, SLOT_LEADER, record, asNonEmptyString(reason));
+    return { requested: true };
   };
 
   const actionTaskCreate = async (input, membership) => {
@@ -1242,6 +1490,9 @@ export const createTeamService = (dependencies) => {
     executeAction,
     /** Entry point for teams the user creates from the app, not from a tool. */
     createFromUi,
+    /** The "Edit team" flow: change a live roster from the app itself. */
+    addMemberFromUi,
+    shutdownMemberFromUi,
     resolveTeamAction,
     /**
      * Test seam: the persisted state as the disk round-trip would render it,
@@ -1276,6 +1527,8 @@ export const createTeamService = (dependencies) => {
               slotId: member.slotId,
               name: member.name,
               role: member.role,
+              domain: member.domain ?? null,
+              isDomainLead: member.isDomainLead === true,
               status: member.removed ? 'shut_down' : member.status,
               sessionId: member.sessionId,
               unreadCount: unreadBySlot.get(member.slotId) ?? 0,

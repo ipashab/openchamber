@@ -76,4 +76,39 @@ describe('team preset store', () => {
     await expect(store.remove(BUILTIN_TEAM_PRESETS[0].id)).rejects.toThrow(/built-in/);
     expect(await store.list()).toHaveLength(BUILTIN_TEAM_PRESETS.length);
   });
+
+  it('keeps sub-team fields on preset members and strips unknown domains', () => {
+    const normalized = normalizeTeamPreset({
+      name: 'Студия',
+      members: [
+        { name: 'Тим-лид', isLead: true },
+        { name: 'Лид аналитики', domain: 'analytics', isDomainLead: true },
+        { name: 'Работяга', domain: 'no-such-domain', isDomainLead: true },
+        { name: 'Без домена' },
+      ],
+    });
+    const domainLead = normalized.members.find((member) => member.name === 'Лид аналитики');
+    expect(domainLead.domain).toBe('analytics');
+    expect(domainLead.isDomainLead).toBe(true);
+    // An unknown domain cannot carry a lead flag out of normalization.
+    const stranger = normalized.members.find((member) => member.name === 'Работяга');
+    expect(stranger.domain).toBeNull();
+    expect(stranger.isDomainLead).toBe(false);
+    const plain = normalized.members.find((member) => member.name === 'Без домена');
+    expect(plain.domain).toBeNull();
+    expect(plain.isDomainLead).toBe(false);
+  });
+
+  it('ships the studio preset with one lead per sub-team', () => {
+    const studio = BUILTIN_TEAM_PRESETS.find((preset) => preset.id === 'builtin-studio');
+    expect(studio).toBeTruthy();
+    const normalized = normalizeTeamPreset(studio, { id: studio.id });
+    const domainLeads = normalized.members.filter((member) => member.isDomainLead === true);
+    expect(domainLeads.map((member) => member.domain).sort()).toEqual(['analytics', 'development', 'qa', 'review']);
+    for (const domain of domainLeads.map((member) => member.domain)) {
+      expect(normalized.members.filter((member) => member.domain === domain && member.isDomainLead === true))
+        .toHaveLength(1);
+    }
+    expect(normalized.members.some((member) => member.isLead && (member.domain || member.isDomainLead))).toBe(false);
+  });
 });

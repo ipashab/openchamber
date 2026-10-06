@@ -70,7 +70,7 @@ export const TEAM_ACTION_DEFINITIONS = Object.freeze([
     action: 'team.spawn_agent',
     title: 'Spawn a teammate',
     leadOnly: true,
-    description: 'Spawn a new teammate session in this team directory; requires a display name and an agent id from team.list_assistants, optional model in provider/model format (omit for the default). Propose the lineup to the user first and wait for their approval in a later message before calling it, unless the user already approved it, the user asked you to create a specific teammate immediately',
+    description: 'Spawn a new teammate session in this team directory; requires a display name and an agent id from team.list_assistants, optional model in provider/model format (omit for the default), optional domain (analytics, development, review, qa) to place it in a sub-team and isDomainLead to make it that sub-team\'s lead — one lead per domain, and a domain member reports to its lead. Propose the lineup to the user first and wait for their approval in a later message before calling it, unless the user already approved it, the user asked you to create a specific teammate immediately',
   },
   {
     action: 'team.rename_agent',
@@ -93,6 +93,12 @@ export const TEAM_ACTION_DEFINITIONS = Object.freeze([
 ]);
 
 export const TEAM_ACTIONS = Object.freeze(TEAM_ACTION_DEFINITIONS.map(({ action }) => action));
+
+/**
+ * Sub-team areas a member can belong to. One list for the checker in the
+ * service, the spawn tool schema and the preset normalizer.
+ */
+export const TEAM_DOMAIN_IDS = Object.freeze(['analytics', 'development', 'review', 'qa']);
 
 const TEAM_ACTION_NAMES = new Set(TEAM_ACTIONS);
 
@@ -126,6 +132,8 @@ export const resolveTeamAction = (requested) => {
  */
 export const TEAM_PARAMETER_PROPERTIES = Object.freeze({
   name: { type: 'string', description: 'Display name of the team (team.start) or of the new teammate (team.spawn_agent)' },
+  domain: { type: 'string', enum: ['analytics', 'development', 'review', 'qa'], description: 'Sub-team area of the new teammate; team.spawn_agent only, optional. A domain member reports to its sub-team lead instead of the Team Lead' },
+  isDomainLead: { type: 'boolean', description: 'Make the new teammate its sub-team\'s lead: it aggregates the domain\'s reports and answers to the Team Lead. Requires domain; one lead per domain; team.spawn_agent only' },
   description: { type: 'string', description: 'What the team is for (team.start) or the task details (team.task_create, team.task_update)' },
   agent: { type: 'string', description: 'Agent id from team.list_assistants; spawn only' },
   model: { type: 'string', description: 'Model in provider/model format for the new teammate; omit for the default; spawn only' },

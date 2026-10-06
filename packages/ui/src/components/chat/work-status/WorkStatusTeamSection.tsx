@@ -7,10 +7,11 @@ import { Button } from '@/components/ui/button';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { useTeamBoard } from '@/hooks/useTeamBoard';
-import { fetchTeamBoards, type TeamMember, type TeamTask } from '@/lib/team/team-board-api';
+import { fetchTeamBoards, TEAM_DOMAIN_LABEL_KEYS, type TeamMember, type TeamTask } from '@/lib/team/team-board-api';
 import { WorkStatusCollapsibleSection, WorkStatusRow, WorkStatusValue } from './WorkStatusPrimitives';
 import { useReportWorkStatusPresence } from './presenceContext';
 import { TeamBoardDialog } from './TeamBoardDialog';
+import { TeamEditDialog } from '@/components/session/team/TeamEditDialog';
 
 type Props = {
   sessionId: string | null;
@@ -61,6 +62,7 @@ export const WorkStatusTeamSection: React.FC<Props> = ({ sessionId, directory, f
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
   const setSectionExpanded = useUIStore((state) => state.setWorkStatusSectionExpanded);
   const [boardOpen, setBoardOpen] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
 
   // The panel tab is the primary opening: the board sits beside the chat
   // instead of covering it, and can be resized and re-opened like any other
@@ -118,27 +120,46 @@ export const WorkStatusTeamSection: React.FC<Props> = ({ sessionId, directory, f
         defaultExpanded
         summary={busyMembers > 0 ? `${busyMembers}/${board.members.length}` : board.members.length}
         action={(
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-6 shrink-0 text-muted-foreground"
-            onClick={openBoard}
-            aria-label={t('chat.workStatus.teamBoard.open')}
-            title={t('chat.workStatus.teamBoard.open')}
-          >
-            <Icon name="layout-column" className="size-3.5" />
-          </Button>
+          <div className="flex shrink-0 items-center">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-6 shrink-0 text-muted-foreground"
+              onClick={() => setEditOpen(true)}
+              aria-label={t('team.edit.title')}
+              title={t('team.edit.title')}
+            >
+              <Icon name="user-3" className="size-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-6 shrink-0 text-muted-foreground"
+              onClick={openBoard}
+              aria-label={t('chat.workStatus.teamBoard.open')}
+              title={t('chat.workStatus.teamBoard.open')}
+            >
+              <Icon name="layout-column" className="size-3.5" />
+            </Button>
+          </div>
         )}
       >
         <div className="max-h-56 overflow-y-auto">
         {board.members.map((member) => {
           const visual = MEMBER_VISUALS[member.status];
           const roleLabel = t(ROLE_LABEL_KEYS[member.role]);
+          const domainParts = member.domain
+            ? [
+              t(TEAM_DOMAIN_LABEL_KEYS[member.domain]),
+              member.isDomainLead ? t('chat.workStatus.team.domainLead') : null,
+            ].filter(Boolean)
+            : [];
+          const roleTooltip = [roleLabel, ...domainParts].filter(Boolean).join(' · ');
           return (
             <WorkStatusRow
               key={member.slotId}
               onClick={() => openMemberSession(member)}
-              ariaLabel={[t('chat.workStatus.team.openMember', { name: member.name }), roleLabel, t(visual.labelKey)]
+              ariaLabel={[t('chat.workStatus.team.openMember', { name: member.name }), roleTooltip, t(visual.labelKey)]
                 .filter(Boolean)
                 .join('. ')}
               leading={(
@@ -147,7 +168,7 @@ export const WorkStatusTeamSection: React.FC<Props> = ({ sessionId, directory, f
                 </span>
               )}
               label={member.name}
-              tooltip={roleLabel}
+              tooltip={roleTooltip}
               value={(
                 <>
                   {member.unreadCount > 0 ? (
@@ -195,6 +216,14 @@ export const WorkStatusTeamSection: React.FC<Props> = ({ sessionId, directory, f
           open={boardOpen}
           onOpenChange={setBoardOpen}
           sessionId={sessionId}
+          directory={directory}
+        />
+      ) : null}
+      {editOpen ? (
+        <TeamEditDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          board={board}
           directory={directory}
         />
       ) : null}

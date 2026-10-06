@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  addTeamMember,
   createTeam,
   deleteTeamPreset,
   fetchTeamPresets,
+  requestTeamMemberShutdown,
   saveTeamPreset,
   teamPresetSchema,
   type TeamPreset,
@@ -97,5 +99,74 @@ describe('team create api', () => {
     const fetches = fakeFetch(400, { error: 'only one member can be the team lead' });
     await expect(createTeam({ name: 'Crew', directory: '/work', members: [] }, fetches as never))
       .rejects.toThrow(/only one member can be the team lead/);
+  });
+
+  test('addTeamMember posts the card to the live team and parses the answer', async () => {
+    const capture: {url?: string; init?: RequestInit} = {};
+    const fetches = fakeFetch(201, {
+      member: { slotId: 'member_1', name: 'Новый', role: 'teammate', domain: 'qa', isDomainLead: false, status: 'busy' },
+    }, capture);
+    const member = await addTeamMember('team_1', {
+      name: 'Новый',
+      agent: null,
+      model: null,
+      brief: null,
+      skills: ['demo'],
+      mcpServers: [],
+      domain: 'qa',
+      isDomainLead: false,
+    }, fetches as never);
+    expect(member.slotId).toBe('member_1');
+    expect(member.domain).toBe('qa');
+    expect(capture.url).toContain('/api/openchamber/teams/team_1/members');
+    expect(capture.init?.method).toBe('POST');
+    expect(String(capture.init?.body)).toContain('"domain":"qa"');
+  });
+
+  test('addTeamMember carries the route reason for a duplicate name', async () => {
+    const fetches = fakeFetch(409, { error: "A teammate named 'Новый' already exists in this team" });
+    await expect(addTeamMember('team_1', { name: 'Новый' }, fetches as never))
+      .rejects.toThrow(/already exists in this team/);
+  });
+
+  test('requestTeamMemberShutdown posts the handshake request and encodes the slot', async () => {
+    const capture: {url?: string; init?: RequestInit} = {};
+    const fetches = fakeFetch(200, { requested: true }, capture);
+    await requestTeamMemberShutdown('team_1', 'member_x/2', 'не нужен', fetches as never);
+    expect(capture.url).toContain('/api/openchamber/teams/team_1/members/');
+    expect(capture.url).toContain(encodeURIComponent('member_x/2'));
+    expect(capture.url).toContain('/shutdown');
+    expect(String(capture.init?.body)).toContain('не нужен');
+  });
+
+  test('requestTeamMemberShutdown surfaces a refusal from the route', async () => {
+    const fetches = fakeFetch(400, { error: 'The Team Lead cannot be dismissed' });
+    await expect(requestTeamMemberShutdown('team_1', 'lead', null, fetches as never))
+      .rejects.toThrow(/cannot be dismissed/);
+  });
+
+  test('the preset schema round-trips sub-team fields and tolerates their absence', () => {
+    const parsed = teamPresetSchema.parse({
+      id: 'p1',
+      name: 'Студия',
+      members: [
+        { name: 'Лид', isLead: true },
+        { name: 'Лид аналитики', domain: 'analytics', isDomainLead: true },
+      ],
+    });
+    expect(parsed.members[0].domain).toBeUndefined();
+    expect(parsed.members[1].domain).toBe('analytics');
+    expect(parsed.members[1].isDomainLead).toBe(true);
+  });
+
+  test('an unknown sub-team id parses to no sub-team, not a schema error', () => {
+    const parsed = teamPresetSchema.parse({
+      id: 'p1',
+      name: 'Студия',
+      members: [{ name: 'Работяга', domain: 'not-a-domain', isDomainLead: true }],
+    });
+    // The schema only tolerates; the server's preset normalizer is what
+    // strips the orphan lead flag from an unknown domain.
+    expect(parsed.members[0].domain).toBeNull();
   });
 });

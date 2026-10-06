@@ -13,14 +13,35 @@ const TEAM_BOARD_ROUTE = '/api/openchamber/teams';
 export const teamMemberStatusSchema = z.enum(['starting', 'busy', 'idle', 'failed', 'shut_down']);
 export type TeamMemberStatus = z.infer<typeof teamMemberStatusSchema>;
 
+// One list with the server: sub-team areas a member can belong to. One lead
+// per domain; a domain member reports to its lead instead of the Team Lead.
+export const TEAM_DOMAIN_IDS = ['analytics', 'development', 'review', 'qa'] as const;
+export type TeamDomain = (typeof TEAM_DOMAIN_IDS)[number];
+
+// The i18n key of each area's display label, shared by the editors, the
+// roster rows and the board.
+export const TEAM_DOMAIN_LABEL_KEYS = {
+  analytics: 'team.domain.analytics',
+  development: 'team.domain.development',
+  review: 'team.domain.review',
+  qa: 'team.domain.qa',
+} as const;
+
+export const teamDomainSchema = z.enum(TEAM_DOMAIN_IDS);
+
 export const teamTaskStatusSchema = z.enum(['pending', 'in_progress', 'completed']);
 export type TeamTaskStatus = z.infer<typeof teamTaskStatusSchema>;
 
-const teamMemberSchema = z.object({
+export const teamMemberSchema = z.object({
   slotId: z.string(),
   name: z.string(),
   role: z.enum(['lead', 'teammate']),
   status: teamMemberStatusSchema,
+  // Sub-team fields carry the domain chain; catch nulls for servers that
+  // predate the concept, the same tolerance `description` uses. Nullish:
+  // a server answer may omit them entirely.
+  domain: teamDomainSchema.nullish().catch(null),
+  isDomainLead: z.boolean().nullish().catch(false),
   // Teammates are ordinary sessions; opening one from the panel needs this.
   sessionId: z.string(),
   unreadCount: z.number().int().min(0),
