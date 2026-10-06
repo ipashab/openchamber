@@ -75,6 +75,20 @@ export const registerTeamRoutes = (app, dependencies) => {
     }
   });
 
+  // The live roster as a preset recipe: read-only, feeding the team editor's
+  // "Save as preset" and "Download JSON" actions. The shape is the preset JSON
+  // the shelf round-trips, so the download imports back without conversion.
+  app.get('/api/openchamber/teams/:teamId/preset', async (req, res) => {
+    try {
+      const result = await teamService.exportPresetFromUi({ teamId: req.params?.teamId });
+      return res.json(result);
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+      if (status >= 500) console.error('[team] preset export failed:', error?.message ?? error);
+      return res.status(status).json({ error: error?.message ?? 'Failed to export team preset' });
+    }
+  });
+
   // Presets are always wired in the server; a missing store is a wiring bug.
   if (!teamPresets) throw new Error('team routes need a team preset store');
 

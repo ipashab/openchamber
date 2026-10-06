@@ -1,4 +1,5 @@
 import { resolveTeamAction, isLeadOnlyTeamAction, TEAM_DOMAIN_IDS } from './tools.js';
+import { normalizeTeamPreset } from './presets.js';
 import {
   buildLeadBriefing,
   buildTeammateBriefing,
@@ -121,6 +122,32 @@ const serializeTeam = (team) => ({
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
   })),
+});
+
+/**
+ * The current roster as a preset recipe: the same JSON shape the "New Team"
+ * presets use, so a running team can be handed to the preset shelf or shipped
+ * as a file without conversion. Dismissed members stay out; the lead always
+ * carries the isLead flag and never a domain.
+ */
+const buildTeamPresetFromTeam = (team, { name, description } = {}) => normalizeTeamPreset({
+  name: name ?? team.name,
+  description: description ?? team.description ?? null,
+  members: team.members
+    .filter((member) => member.removed !== true)
+    .map((member) => ({
+      name: member.name,
+      agent: member.agent ?? null,
+      model: member.model ?? null,
+      brief: member.brief ?? null,
+      skills: asList(member.skills),
+      mcpServers: asList(member.mcpServers),
+      isLead: member.role === 'lead',
+      domain: member.role === 'lead' || !TEAM_DOMAINS.has(member.domain) ? null : member.domain,
+      isDomainLead: member.role === 'lead' ? false : member.isDomainLead === true,
+    }))
+    // Lead first, so the recipe reads like the roster it came from.
+    .sort((left, right) => Number(right.isLead) - Number(left.isLead)),
 });
 
 export const createTeamService = (dependencies) => {
@@ -1333,6 +1360,26 @@ export const createTeamService = (dependencies) => {
     };
   };
 
+  const actionExportPreset = async (input, membership) => {
+    const { team } = membership;
+    // Optional overrides keep the preset from merely inheriting the team's
+    // name and description when the user asked for something else.
+    const name = asNonEmptyString(input.name);
+    const description = asNonEmptyString(input.description);
+    return { preset: buildTeamPresetFromTeam(team, { name, description }) };
+  };
+
+  /**
+   * The app's own recipe export: the roster of a live team as a preset, for
+   * the "Save as preset" and "Download JSON" actions of the team editor.
+   */
+  const exportPresetFromUi = async ({ teamId }) => {
+    await load();
+    const team = getTeam(asNonEmptyString(teamId));
+    if (!team) throw new TeamError(`No team with id '${teamId}'`, 404);
+    return { preset: buildTeamPresetFromTeam(team) };
+  };
+
   const ACTION_HANDLERS = new Map([
     ['team.start', actionStart],
     ['team.members', actionMembers],
@@ -1347,6 +1394,7 @@ export const createTeamService = (dependencies) => {
     ['team.task_create', actionTaskCreate],
     ['team.task_update', actionTaskUpdate],
     ['team.task_list', actionTaskList],
+    ['team.export_preset', actionExportPreset],
   ]);
 
   /**
@@ -1493,6 +1541,7 @@ export const createTeamService = (dependencies) => {
     /** The "Edit team" flow: change a live roster from the app itself. */
     addMemberFromUi,
     shutdownMemberFromUi,
+    exportPresetFromUi,
     resolveTeamAction,
     /**
      * Test seam: the persisted state as the disk round-trip would render it,

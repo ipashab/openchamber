@@ -90,6 +90,12 @@ export const TEAM_ACTION_DEFINITIONS = Object.freeze([
     leadOnly: true,
     description: 'Ask a teammate to shut down; requires slotId, optional reason. Sends a formal shutdown request the teammate approves or refuses; the session stays readable for the user afterwards. Use it whenever the user asks to dismiss, fire, remove or shut down a member',
   },
+  {
+    action: 'team.export_preset',
+    title: 'Export the team as a preset',
+    leadOnly: true,
+    description: 'Snapshot the current roster as a team preset: name, description and every member\'s agent, model, brief and tool allowances, in the JSON shape the "New Team" presets use. Optional name and description override the team\'s own; without them the preset takes the team\'s name. Show the returned JSON to the user as a code block when they ask for the team\'s recipe',
+  },
 ]);
 
 export const TEAM_ACTIONS = Object.freeze(TEAM_ACTION_DEFINITIONS.map(({ action }) => action));
@@ -131,10 +137,10 @@ export const resolveTeamAction = (requested) => {
  * descriptions stay reserved for behavior a name cannot convey.
  */
 export const TEAM_PARAMETER_PROPERTIES = Object.freeze({
-  name: { type: 'string', description: 'Display name of the team (team.start) or of the new teammate (team.spawn_agent)' },
+  name: { type: 'string', description: 'Display name of the team (team.start), of the new teammate (team.spawn_agent) or of the exported preset (team.export_preset, optional — defaults to the team\'s name)' },
   domain: { type: 'string', enum: ['analytics', 'development', 'review', 'qa'], description: 'Sub-team area of the new teammate; team.spawn_agent only, optional. A domain member reports to its sub-team lead instead of the Team Lead' },
   isDomainLead: { type: 'boolean', description: 'Make the new teammate its sub-team\'s lead: it aggregates the domain\'s reports and answers to the Team Lead. Requires domain; one lead per domain; team.spawn_agent only' },
-  description: { type: 'string', description: 'What the team is for (team.start) or the task details (team.task_create, team.task_update)' },
+  description: { type: 'string', description: 'What the team is for (team.start), the task details (team.task_create, team.task_update) or the exported preset (team.export_preset, optional)' },
   agent: { type: 'string', description: 'Agent id from team.list_assistants; spawn only' },
   model: { type: 'string', description: 'Model in provider/model format for the new teammate; omit for the default; spawn only' },
   slotId: { type: 'string', description: 'The member a role action targets, from team.members; use slotId values for every member target, never display names' },

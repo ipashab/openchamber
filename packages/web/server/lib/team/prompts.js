@@ -19,7 +19,7 @@ or from your briefing; use display names only in user-facing text.
 Actions: team.members, team.read_messages, team.send_message, team.task_create,
 team.task_update, team.task_list, team.list_assistants, team.describe_assistant
 are open to every member. team.spawn_agent, team.rename_agent,
-team.interrupt_agent and team.shutdown_agent are Team Lead only.`;
+team.interrupt_agent, team.shutdown_agent and team.export_preset are Team Lead only.`;
 
 const GOVERNANCE = `## Team Governance
 

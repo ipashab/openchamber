@@ -614,3 +614,88 @@ describe('team service: sub-teams and live roster editing', () => {
     await expect(service.addMemberFromUi({ teamId: 'team_missing', input: { name: 'Кто-то' } })).rejects.toMatchObject({ statusCode: 404 });
   });
 });
+
+describe('team.export_preset', () => {
+  it('snaps the live roster into a preset recipe with briefs and tools', async () => {
+    const { service } = await makeService();
+    await service.createFromUi({
+      name: 'Дуэт',
+      description: 'Правки регресса',
+      directory: '/work/project',
+      members: [
+        { name: 'Тим-лид', isLead: true },
+        {
+          name: 'Лид тестирования',
+          agent: 'build',
+          model: 'prov/alpha',
+          brief: 'Руководишь прогонами',
+          skills: ['demo'],
+          mcpServers: ['docs'],
+          domain: 'qa',
+          isDomainLead: true,
+        },
+      ],
+    });
+    // createFromUi spawns the lead its own session; the recipe call is the
+    // lead's, once the roster names it.
+    const [team] = await service.snapshot();
+    const leadSessionId = team.members.find((member) => member.role === 'lead').sessionId;
+
+    const result = await service.executeAction('team.export_preset', {}, leadSessionId);
+    expect(result.preset.name).toBe('Дуэт');
+    expect(result.preset.description).toBe('Правки регресса');
+    const [lead, qaLead] = result.preset.members;
+    expect(lead.isLead).toBe(true);
+    expect(lead.domain).toBeNull();
+    expect(lead.isDomainLead).toBe(false);
+    expect(qaLead.isLead).toBe(false);
+    expect(qaLead.agent).toBe('build');
+    expect(qaLead.model).toBe('prov/alpha');
+    expect(qaLead.brief).toBe('Руководишь прогонами');
+    expect(qaLead.skills).toEqual(['demo']);
+    expect(qaLead.mcpServers).toEqual(['docs']);
+    expect(qaLead.domain).toBe('qa');
+    expect(qaLead.isDomainLead).toBe(true);
+  });
+
+  it('keeps the recipe to the active roster and takes name overrides', async () => {
+    const { service } = await makeService();
+    const created = await service.createFromUi({
+      name: 'Дуэт',
+      directory: '/work/project',
+      members: [
+        { name: 'Тим-лид', isLead: true },
+        { name: 'Тестер', agent: 'build' },
+      ],
+    });
+    const tester = created.members.find((member) => member.name === 'Тестер');
+    const [teamInit] = await service.snapshot();
+    const leadSessionId = teamInit.members.find((member) => member.role === 'lead').sessionId;
+    const testerSessionId = teamInit.members.find((member) => member.name === 'Тестер').sessionId;
+    await expect(service.executeAction('team.export_preset', {}, testerSessionId))
+      .rejects.toMatchObject({ statusCode: 403 });
+
+    await service.executeAction('team.shutdown_agent', { slotId: tester.slotId, reason: 'не нужен' }, leadSessionId);
+    await service.executeAction('team.send_message', { to: 'lead', message: 'shutdown_approved' }, testerSessionId);
+
+    const result = await service.executeAction('team.export_preset', { name: 'Рецепт', description: 'Схема' }, leadSessionId);
+    expect(result.preset.name).toBe('Рецепт');
+    expect(result.preset.description).toBe('Схема');
+    expect(result.preset.members).toHaveLength(1);
+    expect(result.preset.members[0].isLead).toBe(true);
+  });
+
+  it('serves the app its own recipe export', async () => {
+    const { service } = await makeService();
+    const created = await service.createFromUi({
+      name: 'Соло',
+      directory: '/work/project',
+      members: [{ name: 'Тим-лид', isLead: true }],
+    });
+    const { preset } = await service.exportPresetFromUi({ teamId: created.team.id });
+    expect(preset.name).toBe('Соло');
+    expect(preset.members).toHaveLength(1);
+    expect(preset.members[0].isLead).toBe(true);
+    await expect(service.exportPresetFromUi({ teamId: 'team_missing' })).rejects.toMatchObject({ statusCode: 404 });
+  });
+});

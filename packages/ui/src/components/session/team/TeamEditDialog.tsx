@@ -13,7 +13,10 @@ import {
 } from '@/components/ui/dialog';
 import {
   addTeamMember,
+  downloadTeamPresetJson,
+  fetchTeamPresetExport,
   requestTeamMemberShutdown,
+  saveTeamPreset,
   type TeamCreateMember,
   type TeamPresetMember,
 } from '@/lib/team/team-create-api';
@@ -29,6 +32,8 @@ type Props = {
   /** Test seam: the real dialog passes nothing and the route's fetch is used. */
   addMember?: typeof addTeamMember;
   shutdownMember?: typeof requestTeamMemberShutdown;
+  exportPreset?: typeof fetchTeamPresetExport;
+  savePreset?: typeof saveTeamPreset;
 };
 
 type MemberVisual = { icon: IconName; color?: string };
@@ -68,6 +73,8 @@ export const TeamEditDialog: React.FC<Props> = ({
   directory,
   addMember: addMemberImpl = addTeamMember,
   shutdownMember: shutdownMemberImpl = requestTeamMemberShutdown,
+  exportPreset: exportPresetImpl = fetchTeamPresetExport,
+  savePreset: savePresetImpl = saveTeamPreset,
 }) => {
   const { t } = useI18n();
   const { agentOptions, modelOptions, skillOptions, mcpOptions, ensureLoaded } = useTeamEditorOptions(directory);
@@ -75,12 +82,15 @@ export const TeamEditDialog: React.FC<Props> = ({
   const [submitting, setSubmitting] = React.useState(false);
   const [stopPending, setStopPending] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [presetBusy, setPresetBusy] = React.useState(false);
+  const [presetSaved, setPresetSaved] = React.useState(false);
 
   // Every open starts from a clean sheet: the roster itself is live data.
   React.useEffect(() => {
     if (!open) return;
     setNewMembers([blankMember()]);
     setError(null);
+    setPresetSaved(false);
     ensureLoaded(directory);
     // ensureLoaded is stable; the directory the team works in is part of the
     // call, not of the effect's identity.
@@ -132,6 +142,32 @@ export const TeamEditDialog: React.FC<Props> = ({
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setStopPending(null);
+    }
+  };
+
+  /**
+   * The roster as a recipe: either straight onto the preset shelf, or as a
+   * JSON file that imports back. The recipe is built server-side from the
+   * briefs and tool allowances the board itself does not carry.
+   */
+  const exportRecipe = async (mode: 'save' | 'download') => {
+    if (presetBusy) return;
+    setPresetBusy(true);
+    setError(null);
+    try {
+      const preset = await exportPresetImpl(board.id);
+      if (mode === 'download') {
+        downloadTeamPresetJson(preset);
+      } else {
+        // Preserve the server's fresh id: saving with it can never collide
+        // with another recipe of the same name.
+        await savePresetImpl(preset);
+        setPresetSaved(true);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPresetBusy(false);
     }
   };
 
@@ -219,6 +255,37 @@ export const TeamEditDialog: React.FC<Props> = ({
           >
             {submitting ? t('team.edit.adding') : t('team.edit.add')}
           </Button>
+
+          <div className="space-y-2 rounded-lg border border-border p-2.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {t('team.edit.preset.title')}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1"
+                disabled={presetBusy}
+                onClick={() => void exportRecipe('save')}
+              >
+                {presetBusy ? <Icon name="loader-4" className="size-3.5 animate-spin" /> : null}
+                {t('team.edit.preset.save')}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1"
+                disabled={presetBusy}
+                onClick={() => void exportRecipe('download')}
+              >
+                {presetBusy ? <Icon name="loader-4" className="size-3.5 animate-spin" /> : null}
+                {t('team.edit.preset.download')}
+              </Button>
+            </div>
+            {presetSaved ? (
+              <span className="block text-xs text-muted-foreground">{t('team.edit.preset.saved')}</span>
+            ) : null}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

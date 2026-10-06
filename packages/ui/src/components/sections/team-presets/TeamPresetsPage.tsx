@@ -19,6 +19,7 @@ import {
   SettingsCard,
   SettingsCardChip,
   SettingsCardIcon,
+  type SettingsCardAction,
 } from '@/components/sections/shared/SettingsCards';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -26,7 +27,9 @@ import { TeamMemberEditor } from '@/components/session/team/TeamMemberEditor';
 import { useTeamEditorOptions } from '@/components/session/team/useTeamEditorOptions';
 import {
   deleteTeamPreset,
+  downloadTeamPresetJson,
   fetchTeamPresets,
+  parseTeamPresetImport,
   saveTeamPreset,
   type TeamPreset,
 } from '@/lib/team/team-create-api';
@@ -158,6 +161,7 @@ export const TeamPresetsPage: React.FC = () => {
   const [editing, setEditing] = React.useState<TeamPreset | null>(null);
   const [deleting, setDeleting] = React.useState<TeamPreset | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const importInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const reload = React.useCallback(async () => {
     try {
@@ -182,6 +186,37 @@ export const TeamPresetsPage: React.FC = () => {
     }
   };
 
+  /**
+   * Import one or more recipe files: each holds a single preset JSON or an
+   * array of them. Everything that parses goes onto the shelf as new
+   * presets; the server still normalizes each save, so a bad member list
+   * cannot slip through.
+   */
+  const importFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    // Reset so picking the same file twice fires change again.
+    event.target.value = '';
+    if (files.length === 0) return;
+    const imported: TeamPreset[] = [];
+    for (const file of files) {
+      const result = parseTeamPresetImport(await file.text());
+      if ('error' in result) {
+        setError(`${file.name}: ${t(`settings.teams.import.${result.error}`)}`);
+        return;
+      }
+      imported.push(...result.presets);
+    }
+    try {
+      for (const preset of imported) {
+        await saveTeamPreset(preset);
+      }
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : String(saveError));
+      return;
+    }
+    void reload();
+  };
+
   return (
     <SettingsPageLayout title={t('settings.teams.title')} description={t('settings.teams.description')}>
       {error ? (
@@ -195,35 +230,62 @@ export const TeamPresetsPage: React.FC = () => {
           hint={t('settings.teams.addHint')}
           onClick={() => setEditing(blankPreset())}
         />
-        {presets.map((preset) => (
-          <SettingsCard
-            key={preset.id}
-            icon={<SettingsCardIcon name="team" />}
-            title={preset.name}
-            subtitle={preset.description ?? undefined}
-            badges={(
-              <>
-                <SettingsCardChip>{t('settings.teams.memberCount', { count: preset.members.length })}</SettingsCardChip>
-                {preset.builtIn ? <SettingsCardChip>{t('team.create.presets.builtIn')}</SettingsCardChip> : null}
-              </>
-            )}
-            footer={(
-              <span className="truncate text-muted-foreground">
-                {preset.members.map((member) => member.name).join(' · ')}
-              </span>
-            )}
-            onOpen={() => setEditing(preset)}
-            actions={preset.builtIn ? undefined : [
-              {
-                label: t('settings.teams.delete.confirmAction'),
-                icon: 'close',
-                destructive: true,
-                onSelect: () => setDeleting(preset),
-              },
-            ]}
-            actionsLabel={t('settings.teams.actions')}
-          />
-        ))}
+        <SettingsAddCard
+          label={t('settings.teams.import.button')}
+          hint={t('settings.teams.import.hint')}
+          onClick={() => importInputRef.current?.click()}
+          settingsItem="import-team-preset"
+        />
+        {/* Hidden picker behind the import card; choosing a file IS the import. */}
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="application/json,.json"
+          multiple
+          className="hidden"
+          onChange={(event) => void importFiles(event)}
+        />
+        {presets.map((preset) => {
+          // Typed once: the conditional spread below would widen icon to
+          // string without the annotation.
+          const actions: SettingsCardAction[] = [
+            {
+              label: t('settings.teams.export.button'),
+              icon: 'download',
+              onSelect: () => downloadTeamPresetJson(preset),
+            },
+          ];
+          if (!preset.builtIn) {
+            actions.push({
+              label: t('settings.teams.delete.confirmAction'),
+              icon: 'close',
+              destructive: true,
+              onSelect: () => setDeleting(preset),
+            });
+          }
+          return (
+            <SettingsCard
+              key={preset.id}
+              icon={<SettingsCardIcon name="team" />}
+              title={preset.name}
+              subtitle={preset.description ?? undefined}
+              badges={(
+                <>
+                  <SettingsCardChip>{t('settings.teams.memberCount', { count: preset.members.length })}</SettingsCardChip>
+                  {preset.builtIn ? <SettingsCardChip>{t('team.create.presets.builtIn')}</SettingsCardChip> : null}
+                </>
+              )}
+              footer={(
+                <span className="truncate text-muted-foreground">
+                  {preset.members.map((member) => member.name).join(' · ')}
+                </span>
+              )}
+              onOpen={() => setEditing(preset)}
+              actions={actions}
+              actionsLabel={t('settings.teams.actions')}
+            />
+          );
+        })}
       </div>
 
       {editing ? (

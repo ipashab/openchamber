@@ -220,4 +220,29 @@ describe('team routes', () => {
     expect(res.statusCode).toBeNull();
     expect(res.body).toEqual({ requested: true });
   });
+
+  it('serves the roster as a preset recipe on GET /api/openchamber/teams/:teamId/preset', async () => {
+    const app = makeApp();
+    const service = makeService();
+    service.exportPresetFromUi = vi.fn(async ({ teamId }) => {
+      expect(teamId).toBe('team_1');
+      return { preset: { id: 'preset_x', name: 'Crew', members: [{ name: 'Team Lead', isLead: true }] } };
+    });
+    registerTeamRoutes(app, { teamService: service, teamPresets: makePresets() });
+
+    const res = makeRes();
+    await findRoute(app, 'GET', '/api/openchamber/teams/:teamId/preset')
+      .handler({ params: { teamId: 'team_1' } }, res);
+    expect(res.statusCode).toBeNull();
+    expect(res.body.preset.name).toBe('Crew');
+
+    const missing = new Error("No team with id 'team_missing'");
+    missing.statusCode = 404;
+    service.exportPresetFromUi = vi.fn(async () => { throw missing; });
+    const res404 = makeRes();
+    await findRoute(app, 'GET', '/api/openchamber/teams/:teamId/preset')
+      .handler({ params: { teamId: 'team_missing' } }, res404);
+    expect(res404.statusCode).toBe(404);
+    expect(res404.body.error).toContain('No team with id');
+  });
 });
