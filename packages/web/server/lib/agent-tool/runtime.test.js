@@ -221,7 +221,23 @@ describe('managed agent tool runtime', () => {
     await prepareManagedEnv(runtime, { includeControl: false, includeWeb: true, includeMemory: false });
     const tool = await loadTools(dataDir, 'web');
 
-    expect(Object.keys(tool)).toEqual(['openchamber_web']);
+    expect(Object.keys(tool)).toEqual(['openchamber_web', 'openchamber_team']);
+  });
+
+  it('exposes the team tool on every settings combination', async () => {
+    // Team Mode is a first-party capability, not a settings-gated convenience:
+    // the tool is inert (404) outside a team, so it ships always.
+    const { runtime, dataDir } = await createRuntime();
+    await prepareManagedEnv(runtime, { includeControl: true, includeWeb: true, includeMemory: true, includeNotify: true });
+    const tool = await loadTools(dataDir, 'all');
+    expect(Object.keys(tool)).toContain('openchamber_team');
+    expect(tool.openchamber_team.input.properties.action.oneOf.map((entry) => entry.const))
+      .toEqual(expect.arrayContaining(['team.start', 'team.spawn_agent', 'team.task_create']));
+    expect(Object.keys(tool.openchamber_team.input.properties.parameters.properties).sort())
+      .toEqual(['agent', 'blockedBy', 'description', 'message', 'model', 'name', 'newName', 'owner', 'reason', 'sinceMessageId', 'slotId', 'status', 'subject', 'taskId', 'to']);
+
+    // Team inputs must not leak into the control tool's schema.
+    expect(Object.keys(tool.openchamber.input.properties.parameters.properties)).not.toContain('slotId');
   });
 
   it('exposes memory as its own tool carrying only its own inputs', async () => {
@@ -229,7 +245,7 @@ describe('managed agent tool runtime', () => {
     await prepareManagedEnv(runtime, { includeControl: true, includeWeb: false, includeMemory: true });
     const tool = await loadTools(dataDir, 'memory');
 
-    expect(Object.keys(tool)).toEqual(['openchamber', 'openchamber_memory']);
+    expect(Object.keys(tool)).toEqual(['openchamber', 'openchamber_memory', 'openchamber_team']);
     expect(Object.keys(tool.openchamber_memory.input.properties.parameters.properties).sort())
       .toEqual(['body', 'memoryId', 'scope', 'title', 'type']);
     // Memory inputs must not leak into the control tool's schema, which the
@@ -242,7 +258,7 @@ describe('managed agent tool runtime', () => {
     await prepareManagedEnv(runtime, { includeControl: true, includeWeb: false, includeMemory: false });
     const tool = await loadTools(dataDir, 'nomemory');
 
-    expect(Object.keys(tool)).toEqual(['openchamber']);
+    expect(Object.keys(tool)).toEqual(['openchamber', 'openchamber_team']);
   });
 
   it('injects the plugin when memory is the only tool left on', async () => {
@@ -250,7 +266,7 @@ describe('managed agent tool runtime', () => {
     await prepareManagedEnv(runtime, { includeControl: false, includeWeb: false, includeMemory: true });
     const tool = await loadTools(dataDir, 'onlymemory');
 
-    expect(Object.keys(tool)).toEqual(['openchamber_memory']);
+    expect(Object.keys(tool)).toEqual(['openchamber_memory', 'openchamber_team']);
   });
 
   it('exposes notify as its own tool only when switched on', async () => {
@@ -258,14 +274,14 @@ describe('managed agent tool runtime', () => {
     await prepareManagedEnv(runtime, { includeControl: true, includeWeb: false, includeMemory: false, includeNotify: true });
     const tool = await loadTools(dataDir, 'notify');
 
-    expect(Object.keys(tool)).toEqual(['openchamber', 'openchamber_notify']);
+    expect(Object.keys(tool)).toEqual(['openchamber', 'openchamber_notify', 'openchamber_team']);
     expect(Object.keys(tool.openchamber_notify.input.properties.parameters.properties).sort())
       .toEqual(['body', 'showWhenFocused', 'title']);
     expect(Object.keys(tool.openchamber.input.properties.parameters.properties)).not.toContain('showWhenFocused');
 
     const { runtime: plain, dataDir: plainDir } = await createRuntime();
     await prepareManagedEnv(plain, { includeControl: true, includeWeb: false, includeMemory: false });
-    expect(Object.keys(await loadTools(plainDir, 'nonotify'))).toEqual(['openchamber']);
+    expect(Object.keys(await loadTools(plainDir, 'nonotify'))).toEqual(['openchamber', 'openchamber_team']);
   });
 
   it('registers every tool as a direct tool unless Code Mode is asked for', async () => {

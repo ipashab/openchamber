@@ -9,6 +9,11 @@ import {
   OPENCHAMBER_WEB_ACTION_DEFINITIONS,
   OPENCHAMBER_WEB_ACTIONS,
 } from '../openchamber-control/actions.js';
+import {
+  TEAM_ACTION_DEFINITIONS,
+  TEAM_PARAMETER_PROPERTIES,
+  resolveTeamAction,
+} from '../team/tools.js';
 import { createCallbackAddress } from './callback-address.js';
 
 const TOOL_SCHEMA_VERSION = 1;
@@ -148,6 +153,10 @@ const WEB_TOOL_DESCRIPTION = "Look at and interact with a web page in OpenChambe
 const MEMORY_TOOL_DESCRIPTION = "Keep what you learn across sessions, so the user does not have to explain the same thing twice. Use one action per call. The session already lists the titles of what is stored. A title is an abbreviation, not the memory: read the entry with memory.read once before acting on it (it then stays in your context; do not re-read it on later turns), because titles leave out the conditions and exceptions that decide how the memory applies, and the ones that look self-explanatory hide them most often. Save something only when it will still be true in a later session — a stable preference, a project convention, a decision and its reason, or a hard-won pointer. Do not save one-off task state, anything you can read from the code, secrets or credentials, or anything the user asked you not to keep; when the user explicitly asks you to remember something, save it, unless it is a secret or credential. Choose the scope deliberately: global is about the user and reaches every project, so put a project's conventions in project scope. Save in the moment, without asking first, when the user corrects how you work or states a preference, confirms that a non-obvious approach worked, or when you learn a project fact that took real effort to find. One fact per entry. The user can review and remove what you save, so save when it fits and mention it briefly.";
 
 const NOTIFY_TOOL_DESCRIPTION = "Send the user a notification through OpenChamber, so they learn about something without watching the session. Use it when you finish work that took long enough for the user to step away, when you are blocked on something only the user can resolve, or when the user asked to be told about something. Do not use it for routine progress, for every finished step, or to repeat what your reply already says to a user who is present. Keep the title short and put detail in the body.";
+
+// For the team tool the description is the instruction manual: after choosing
+// it the model's first source of truth is here, then the team.start briefing.
+const TEAM_TOOL_DESCRIPTION = "Run a small team of AI agents that work in parallel in this directory: this session becomes the Team Lead, teammates are sessions spawned as its children, and coordination flows through a shared mailbox and a shared task board. Use only when the user explicitly asks for a team, multiple agents working together, or a leader with teammates; delegating part of your own task stays with the subagent tool. Start with team.start and read the returned briefing fully before any other team action. Propose the teammate lineup to the user and wait for approval before team.spawn_agent. Assign work with team.task_create — an owner assignment wakes that teammate with the task details. Report and coordinate through team.send_message; a teammate reports to the lead's slotId the same way. End your turn to wait: never stream waiting text. One action per call. Member targets are slotId values from team.members or your briefing, never display names.";
 
 const DISPATCH_ACTIONS = new Set(['session.create', 'session.send', 'session.fork']);
 
@@ -319,6 +328,15 @@ const createPluginSource = ({ includeControl, includeWeb, includeMemory, include
       codeMode,
     }));
   }
+  // Team Mode is a first-party capability, not a settings-gated convenience:
+  // the tool is inert (404) for every session not in a team, so it ships on.
+  entries.push(createToolEntry({
+    name: 'openchamber_team',
+    description: TEAM_TOOL_DESCRIPTION,
+    definitions: TEAM_ACTION_DEFINITIONS,
+    parameters: TEAM_PARAMETER_PROPERTIES,
+    codeMode,
+  }));
 
   // The callback carries the per-child token over plain HTTP. With a proxy in
   // the child's environment, fetch would hand a non-loopback callback, token
@@ -365,6 +383,9 @@ export const createAgentToolRuntime = (dependencies) => {
     getActivePort,
     getActiveHost = () => null,
     executeAction,
+    // Team Mode dispatch: reads and writes the roster, mailbox and board for
+    // the session that called the openchamber_team tool.
+    executeTeamAction = null,
     resolveSessionDirectory,
   } = dependencies;
   const pluginRoot = path.join(dataDir, 'agent-tool');
@@ -422,6 +443,44 @@ export const createAgentToolRuntime = (dependencies) => {
 
   const execute = async (payload = {}, options = {}) => {
     const requested = asNonEmptyString(payload.input?.action);
+
+    // Team actions resolve and dispatch through the team service; they never
+    // enter the control service's allowlist. The calling session identifies
+    // the member: every roster check is per call, on the team side.
+    if (asNonEmptyString(payload.tool) === 'openchamber_team') {
+      const resolution = resolveTeamAction(requested);
+      if (resolution.error) {
+        return createResult({ ok: false, action: requested, error: { message: resolution.error, kind: 'usage' } });
+      }
+      const action = resolution.action;
+      const sessionID = asNonEmptyString(payload.sessionID);
+      if (!sessionID) {
+        return createResult({ ok: false, action, error: { message: 'The team tool needs the session that called it', kind: 'usage' } });
+      }
+      if (typeof executeTeamAction !== 'function') {
+        return createResult({ ok: false, action, error: { message: 'OpenChamber team service is unavailable', kind: 'runtime' } });
+      }
+      try {
+        const data = await executeTeamAction(
+          action,
+          { ...payload.input, action },
+          sessionID,
+          { signal: options.signal },
+        );
+        return createResult({ ok: true, action, data });
+      } catch (error) {
+        const statusCode = Number(error?.statusCode);
+        return createResult({
+          ok: false,
+          action,
+          error: {
+            message: error instanceof Error ? error.message : String(error),
+            kind: statusCode >= 400 && statusCode < 499 ? 'usage' : 'runtime',
+          },
+        });
+      }
+    }
+
     // Resolved against the calling tool's own actions: models drop the
     // namespace that the tool's name already implies, and answering "read" with
     // a bare "unsupported" leaves them to guess a second wrong name.

@@ -19,10 +19,12 @@ export const SessionSidebarActivityHeader: React.FC<{
   alwaysShowActions: boolean;
   onToggle: () => void;
   onNewChat: () => void;
+  /** The chats zone grows a second action: create a team, not just a chat. */
+  onNewTeam?: () => void;
   /** Timeline zones drop the leading icon and take a taller band; the
       collapse chevron still appears on hover in the icon slot. */
   timelineView?: boolean;
-}> = ({ activityKey, collapsed, forceExpanded, alwaysShowActions, onToggle, onNewChat, timelineView = false }) => {
+}> = ({ activityKey, collapsed, forceExpanded, alwaysShowActions, onToggle, onNewChat, onNewTeam, timelineView = false }) => {
   const { t } = useI18n();
   const chats = activityKey === 'chats';
   if (timelineView) {
@@ -48,7 +50,7 @@ export const SessionSidebarActivityHeader: React.FC<{
       type="button"
       onClick={forceExpanded ? undefined : onToggle}
       disabled={forceExpanded}
-      className={cn('group flex w-full items-center gap-1.5 py-1 pl-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50', chats ? 'pr-10' : 'pr-3.5')}
+      className={cn('group flex w-full items-center gap-1.5 py-1 pl-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50', chats ? (onNewTeam ? 'pr-16' : 'pr-10') : 'pr-3.5')}
       aria-expanded={!collapsed}
     >
       <span className="inline-flex h-3.5 w-3.5 items-center justify-center">
@@ -68,6 +70,14 @@ export const SessionSidebarActivityHeader: React.FC<{
       aria-label={t('sessions.sidebar.header.actions.newSession')}
     >
       <Icon name="add" className="h-4 w-4" />
+    </button> : null}
+    {chats && onNewTeam ? <button
+      type="button"
+      onClick={(event) => { event.stopPropagation(); onNewTeam(); }}
+      className={cn('absolute right-7 top-1/2 z-10 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50', alwaysShowActions ? 'opacity-100' : 'opacity-0 pointer-events-none group-hover/chats:opacity-100 group-hover/chats:pointer-events-auto group-focus-within/chats:opacity-100 group-focus-within/chats:pointer-events-auto')}
+      aria-label={t('sessions.sidebar.header.actions.newTeam')}
+    >
+      <Icon name="team" className="h-4 w-4" />
     </button> : null}
   </div>;
 };

@@ -49,6 +49,7 @@ import type { SidebarViewMode } from '@/stores/useSessionDisplayStore';
 import { holdOrder, rankByLatestActivity } from './projectSort';
 import type { DeleteSessionConfirmState } from '../sessions/useSessionActions';
 import { useExpandedParents } from '../sessions/useExpandedParents';
+import { getTeamLeadIdFromSession } from '@/lib/team/teamSessionMarkers';
 import { getChatsRootForHome, getChatsRootFromDirectory, isChatDirectoryPath } from '@/lib/chatDirectories';
 import { isCapacitorApp } from '@/lib/platform';
 import { deriveRecentActivitySections, deriveTimelineActivityItems, sessionTreeMatchesSidebarQuery } from '../recent/activitySections';
@@ -244,7 +245,23 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     setFolderRename((current) => current ? { ...current, draft } : null);
   }, []);
   const clearFolderRename = React.useCallback(() => setFolderRename(null), []);
-  const { expandedParents, toggleParent } = useExpandedParents();
+  const { expandedParents, toggleParent, ensureExpanded } = useExpandedParents();
+  // A live team's teammates are child sessions of the lead; the tree nests
+  // them but starts collapsed. Seed the lead's expansion key once per team —
+  // never again — so a later user collapse is final for that mount.
+  const autoExpandedTeamLeadIdsRef = React.useRef<Set<string>>(new Set());
+  React.useEffect(() => {
+    const freshLeadIds = collection.orderedSessions
+      .map((session) => getTeamLeadIdFromSession(session))
+      .filter((leadId): leadId is string => leadId !== null)
+      .filter((leadId) => !autoExpandedTeamLeadIdsRef.current.has(leadId));
+    if (freshLeadIds.length === 0) return;
+    for (const leadId of freshLeadIds) autoExpandedTeamLeadIdsRef.current.add(leadId);
+    ensureExpanded([
+      ...freshLeadIds.map((leadId) => `recent:active:${leadId}`),
+      ...freshLeadIds.map((leadId) => `project:active:${leadId}`),
+    ]);
+  }, [collection.orderedSessions, ensureExpanded]);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
   const selectSessionForProject = React.useCallback((sessionId: string, sessionDirectory: string | null) => {
     if (sessionId === useSessionUIStore.getState().currentSessionId) return;
