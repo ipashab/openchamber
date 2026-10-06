@@ -20,6 +20,7 @@ const GitView = lazyWithChunkRecovery(() => import('@/components/views/GitView')
 // users never render this panel; keep it out of the main bundle.
 const PlanView = lazyWithChunkRecovery(() => import('@/components/views/PlanView').then((m) => ({ default: m.PlanView })));
 import { ProjectContextPanel } from './RightSidebarTabs';
+import { TeamBoardView } from '@/components/chat/work-status/TeamBoardView';
 import { SidebarFilesTree } from './SidebarFilesTree';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRepositoryReferenceProvider } from '@/components/references/referenceSources';
@@ -169,6 +170,7 @@ const getModeLabel = (
   if (mode === 'pr') return t('contextPanel.mode.pr');
   if (mode === 'notes') return t('contextRail.surface.notes');
   if (mode === 'terminal') return t('layout.mainTab.terminal');
+  if (mode === 'team') return t('contextPanel.mode.team');
   if (isPluginContextPanelMode(mode)) {
     const guest = useGuestsStore.getState().guests.find((entry) => entry.id === pluginIdFromMode(mode));
     return guest?.name ?? t('contextRail.surface.plugin');
@@ -277,6 +279,10 @@ const getTabIcon = (
 
   if (tab.mode === 'terminal') {
     return <Icon name="terminal-box" className="h-3.5 w-3.5" />;
+  }
+
+  if (tab.mode === 'team') {
+    return <Icon name="layout-column" className="h-3.5 w-3.5" />;
   }
 
   if (tab.mode === 'plan') {
@@ -444,6 +450,18 @@ const getSessionIDFromDedupeKey = (dedupeKey: string | undefined): string | null
   }
 
   const sessionID = dedupeKey.slice('session:'.length).trim();
+  return sessionID || null;
+};
+
+// A team-board tab is pinned to the session it was opened from, the same way
+// a split chat is; without that it could not say which team to draw after a
+// session switch.
+const getTeamSessionIDFromDedupeKey = (dedupeKey: string | undefined): string | null => {
+  if (!dedupeKey || !dedupeKey.startsWith('team:')) {
+    return null;
+  }
+
+  const sessionID = dedupeKey.slice('team:'.length).trim();
   return sessionID || null;
 };
 
@@ -931,6 +949,11 @@ export const ContextPanel: React.FC = () => {
                   ? { projectRef: activeTab.projectPlanRef, planId: activeTab.projectPlanId }
                   : null}
               /></React.Suspense>
+            : activeTab?.mode === 'team'
+                ? <div className="flex h-full min-h-0 flex-col p-3"><TeamBoardView
+                    sessionId={getTeamSessionIDFromDedupeKey(activeTab.dedupeKey)}
+                    directory={effectiveDirectory}
+                  /></div>
             : null;
 
   const browserTabs = React.useMemo(

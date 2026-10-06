@@ -16,7 +16,8 @@ type BuiltInContextSurfaceId =
   | 'notes'
   | 'context'
   | 'browser'
-  | 'chat';
+  | 'chat'
+  | 'team';
 
 export type ContextSurfaceId = BuiltInContextSurfaceId | `plugin:${string}`;
 
@@ -147,6 +148,17 @@ export const CONTEXT_SURFACES: readonly ContextSurfaceDescriptor[] = [
     mode: 'chat',
     icon: 'chat-4',
     labelKey: 'contextPanel.mode.chat',
+    availability: 'has-content',
+  },
+  {
+    // The team board needs the session it belongs to, like the chat split
+    // needs its session: the rail shows it only while a board tab is open.
+    id: 'team',
+    descriptionKey: 'contextRail.surface.team.description',
+    defaultWidthFraction: 3 / 5,
+    mode: 'team',
+    icon: 'layout-column',
+    labelKey: 'contextPanel.mode.team',
     availability: 'has-content',
   },
 ];
