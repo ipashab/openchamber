@@ -1,0 +1,466 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { createTeamService } from './service.js';
+
+const temporaryDirectories = [];
+const services = [];
+
+afterEach(async () => {
+  services.splice(0);
+  await Promise.all(temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })));
+});
+
+const makeService = async () => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-team-'));
+  temporaryDirectories.push(dataDir);
+
+  const sent = [];
+  const broadcasts = [];
+  const openCodeState = {
+    interrupts: 0,
+    parentID: null,
+    creates: [],
+    sessions: {
+      ses_lead: { id: 'ses_lead', title: 'Main', directory: '/work/project' },
+    },
+  };
+
+  const createOpenCodeClient = () => ({
+    session: {
+      get: async ({ sessionID }) => {
+        const session = openCodeState.sessions[sessionID];
+        if (!session) throw new Error('session not found');
+        return session;
+      },
+      create: async (input) => {
+        const { parentID, title, location, metadata } = input;
+        const id = `ses_${Math.random().toString(36).slice(2, 10)}`;
+        openCodeState.creates.push(input);
+        openCodeState.sessions[id] = { id, title, directory: location.directory, parentID, metadata };
+        openCodeState.parentID = parentID;
+        return openCodeState.sessions[id];
+      },
+      interrupt: async () => {
+        openCodeState.interrupts += 1;
+        return { interrupted: true };
+      },
+      update: async () => {},
+    },
+    agent: {
+      list: async () => ({
+        data: [
+          { id: 'build', name: 'Build', mode: 'primary', description: 'builds' },
+          { id: 'plan', name: 'Plan', mode: 'subagent', description: 'plans' },
+          { id: 'ghost', name: 'Ghost', mode: 'primary', hidden: true },
+        ],
+      }),
+    },
+    model: {
+      list: async () => ({ data: [{ providerID: 'prov', modelID: 'alpha' }] }),
+    },
+    mcp: {
+      list: async () => ({ data: [{ name: 'docs' }, { name: 'tracker' }] }),
+    },
+  });
+
+  const service = createTeamService({
+    fsPromises: fs,
+    path,
+    dataDir,
+    buildOpenCodeUrl: () => 'http://127.0.0.1:1/api',
+    getOpenCodeAuthHeaders: () => ({}),
+    waitForOpenCodeReady: async () => {},
+    createOpenCodeClient,
+    sessionService: {
+      send: async (sessionID, payload) => {
+        sent.push({ sessionID, payload });
+      },
+    },
+    broadcastUiEvent: (event) => broadcasts.push(event),
+  });
+  await service.init();
+  services.push(service);
+  return { service, sent, broadcasts, openCodeState, dataDir };
+};
+
+/**
+ * Start → spawn two teammates → end every briefing turn, so each test wakes
+ * an idle member the way the orchestrator leaves it in production.
+ */
+const makeTeam = async (service, { teammates = ['Alice', 'Bob'] } = {}) => {
+  await service.executeAction('team.start', { name: 'Crew' }, 'ses_lead');
+  for (const name of teammates) {
+    await service.executeAction('team.spawn_agent', { name, agent: 'build' }, 'ses_lead');
+  }
+  const [team] = await service.snapshot();
+  const roster = team.members.filter((member) => member.slotId !== 'lead');
+  for (const member of roster) {
+    await service.processPayload(idleEvent(member.sessionId));
+  }
+  return { teamId: team.id, roster };
+};
+
+const idleEvent = (sessionID, extra = {}) => ({
+  type: 'session.idle',
+  properties: { sessionID, ...extra },
+});
+
+describe('team service', () => {
+  it('rejects team actions from a session outside any team', async () => {
+    const { service } = await makeService();
+    await expect(service.executeAction('team.members', {}, 'ses_lead'))
+      .rejects.toMatchObject({ message: expect.stringContaining('not part of a team') });
+  });
+
+  it('starts a team and returns the lead briefing', async () => {
+    const { service } = await makeService();
+    const result = await service.executeAction('team.start', { name: 'Crew' }, 'ses_lead');
+    expect(result.team.name).toBe('Crew');
+    expect(result.team.directory).toBe('/work/project');
+    expect(result.briefing).toContain('You are the Team Lead');
+    expect(result.briefing).toContain('slot_id: lead');
+  });
+
+  it('refuses a second team for the same session', async () => {
+    const { service } = await makeService();
+    await service.executeAction('team.start', { name: 'One' }, 'ses_lead');
+    await expect(service.executeAction('team.start', { name: 'Two' }, 'ses_lead'))
+      .rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it('spawns a teammate as a child of the lead with its briefing dispatched', async () => {
+    const { service, sent, openCodeState } = await makeService();
+    await service.executeAction('team.start', { name: 'Crew' }, 'ses_lead');
+    const spawned = await service.executeAction('team.spawn_agent', { name: 'Alice', agent: 'build' }, 'ses_lead');
+
+    expect(spawned.member.status).toBe('busy');
+    expect(openCodeState.parentID).toBe('ses_lead');
+    const briefing = sent.find((entry) => entry.sessionID === spawned.member.sessionId)
+      ?? sent.find((entry) => entry.payload.prompt.includes('You are a Team Member'));
+    expect(briefing.payload.prompt).toContain('You are a Team Member');
+    expect(briefing.payload.prompt).toContain('Alice');
+    expect(briefing.payload.prompt).toContain('slot_id: lead');
+    expect(briefing.payload.agent).toBe('build');
+
+    const [team] = await service.snapshot();
+    const member = team.members.find((entry) => entry.slotId === spawned.member.slotId);
+    expect(member.role).toBe('teammate');
+    expect(member.status).toBe('busy');
+  });
+
+  it('hides subagents and hidden agents from the spawnable catalog', async () => {
+    const { service } = await makeService();
+    await service.executeAction('team.start', { name: 'Crew' }, 'ses_lead');
+    const { assistants } = await service.executeAction('team.list_assistants', {}, 'ses_lead');
+    expect(assistants.map((assistant) => assistant.id)).toEqual(['build']);
+  });
+
+  it('enforces lead-only actions per call', async () => {
+    const { service } = await makeService();
+    const { roster } = await makeTeam(service);
+    const alice = roster[0];
+
+    await expect(
+      service.executeAction('team.spawn_agent', { name: 'Mallory', agent: 'build' }, alice.sessionId),
+    ).rejects.toMatchObject({ statusCode: 403 });
+
+    const { members } = await service.executeAction('team.members', {}, 'ses_lead');
+    expect(members.length).toBe(3);
+  });
+
+  it('delivers a message as a wake and keeps it unread until the turn succeeds', async () => {
+    const { service, sent } = await makeService();
+    const { roster } = await makeTeam(service);
+    const alice = roster[0];
+
+    await service.executeAction('team.send_message', { to: alice.slotId, message: 'Survey the codebase' }, 'ses_lead');
+    const wake = sent.filter((entry) => entry.sessionID === alice.sessionId).at(-1);
+    expect(wake.payload.prompt).toContain('Survey the codebase');
+    expect(wake.payload.prompt).not.toContain('You are a Team Member');
+
+    const mailbox = async () => (await service.snapshot())[0].mailbox;
+    expect((await mailbox()).every((message) => message.read === false)).toBe(true);
+
+    // Failed turn: the delivery claim is dropped, mail stays queued for retry.
+    await service.processPayload(idleEvent(alice.sessionId, { aborted: true }));
+    expect((await mailbox()).every((message) => message.read === false)).toBe(true);
+
+    // A retry delivers the whole backlog; the successful turn marks it read.
+    await service.executeAction('team.send_message', { to: alice.slotId, message: 'Try again' }, 'ses_lead');
+    await service.processPayload(idleEvent(alice.sessionId));
+    const settled = await mailbox();
+    expect(settled.filter((message) => message.read === true).length).toBe(2);
+    expect(settled.filter((message) => message.read !== true).length).toBe(0);
+  });
+
+  it('creates a task, assigns it and wakes the owner with its details', async () => {
+    const { service, sent } = await makeService();
+    const { roster } = await makeTeam(service);
+    const alice = roster[0];
+
+    const { task } = await service.executeAction('team.task_create', {
+      subject: 'Map the modules',
+      description: 'List every module',
+      owner: alice.slotId,
+    }, 'ses_lead');
+
+    expect(task.owner).toBe(alice.slotId);
+    const wake = sent.filter((entry) => entry.sessionID === alice.sessionId).at(-1);
+    expect(wake.payload.prompt).toContain('Task assigned to you: Map the modules');
+    expect(wake.payload.prompt).toContain('List every module');
+
+    const updated = await service.executeAction('team.task_update', {
+      taskId: task.taskId,
+      status: 'completed',
+    }, alice.sessionId);
+    expect(updated.task.status).toBe('completed');
+  });
+
+  it('notifies the lead when a teammate finishes a turn with something for it', async () => {
+    const { service, sent } = await makeService();
+    const { roster } = await makeTeam(service);
+    const alice = roster[0];
+
+    await service.executeAction('team.send_message', { to: 'lead', message: 'Report: mapped modules' }, alice.sessionId);
+    await service.processPayload(idleEvent(alice.sessionId));
+
+    const leadWake = sent.filter((entry) => entry.sessionID === 'ses_lead').at(-1);
+    expect(leadWake.payload.prompt).toContain('Report: mapped modules');
+  });
+
+  it('moves a failed teammate to failed and tells the lead', async () => {
+    const { service, sent } = await makeService();
+    const { roster } = await makeTeam(service);
+    const alice = roster[0];
+
+    await service.processPayload({
+      type: 'session.error',
+      properties: { sessionID: alice.sessionId, error: { message: 'boom' } },
+    });
+
+    const [team] = await service.snapshot();
+    const member = team.members.find((entry) => entry.slotId === alice.slotId);
+    expect(member.status).toBe('failed');
+    const leadWake = sent.filter((entry) => entry.sessionID === 'ses_lead').at(-1);
+    expect(leadWake.payload.prompt).toContain('failed');
+  });
+
+  it('retires a teammate on shutdown approval and keeps history readable', async () => {
+    const { service } = await makeService();
+    const { roster } = await makeTeam(service);
+    const alice = roster[0];
+
+    await service.executeAction('team.shutdown_agent', { slotId: alice.slotId, reason: 'done' }, 'ses_lead');
+    // The approval line from the teammate retires the member.
+    await service.executeAction('team.send_message', { to: 'lead', message: 'shutdown_approved' }, alice.sessionId);
+
+    const [team] = await service.snapshot();
+    const member = team.members.find((entry) => entry.slotId === alice.slotId);
+    expect(member.removed).toBe(true);
+    expect(member.status).toBe('shut_down');
+
+    await expect(
+      service.executeAction('team.members', {}, alice.sessionId),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it('stacks a wake for a busy member and dispatches it on idle', async () => {
+    const { service, sent } = await makeService();
+    const { roster } = await makeTeam(service);
+    const alice = roster[0];
+    const briefings = sent.length;
+
+    await service.executeAction('team.send_message', { to: alice.slotId, message: 'first' }, 'ses_lead');
+    expect(sent.length).toBe(briefings + 1);
+    // Alice is busy with the first wake; the second must stack, not send.
+    await service.executeAction('team.send_message', { to: alice.slotId, message: 'second' }, 'ses_lead');
+    expect(sent.length).toBe(briefings + 1);
+
+    await service.processPayload(idleEvent(alice.sessionId));
+    expect(sent.length).toBe(briefings + 2);
+    const wake = sent.filter((entry) => entry.sessionID === alice.sessionId).at(-1);
+    expect(wake.payload.prompt).toContain('second');
+  });
+
+  it('interrupts a busy teammate on demand', async () => {
+    const { service, openCodeState } = await makeService();
+    const { roster } = await makeTeam(service);
+    const alice = roster[0];
+
+    await service.executeAction('team.send_message', { to: alice.slotId, message: 'Investigate' }, 'ses_lead');
+    const outcome = await service.executeAction('team.interrupt_agent', {
+      slotId: alice.slotId,
+      message: 'Change of plan',
+    }, 'ses_lead');
+
+    expect(outcome.interrupted).toBe(true);
+    expect(openCodeState.interrupts).toBe(1);
+    const [team] = await service.snapshot();
+    const member = team.members.find((entry) => entry.slotId === alice.slotId);
+    expect(member.status).toBe('busy');
+  });
+
+  it('broadcasts team events on the control stream', async () => {
+    const { service, broadcasts } = await makeService();
+    await service.executeAction('team.start', { name: 'Crew' }, 'ses_lead');
+    expect(broadcasts.some((event) => event.type === 'openchamber:team-created')).toBe(true);
+
+    await service.executeAction('team.spawn_agent', { name: 'Alice', agent: 'build' }, 'ses_lead');
+    expect(broadcasts.some((event) => event.type === 'openchamber:team-members')).toBe(true);
+  });
+
+  it('renders the overview the panel reads: unread counts, clipped mail, no deleted tasks', async () => {
+    const { service } = await makeService();
+    const { roster } = await makeTeam(service, { teammates: ['Alice'] });
+    const alice = roster[0];
+
+    await service.executeAction('team.send_message', { to: alice.slotId, message: 'one' }, 'ses_lead');
+    await service.executeAction('team.send_message', { to: 'lead', message: 'Report ready' }, alice.sessionId);
+    const { task } = await service.executeAction('team.task_create', {
+      subject: 'Map the modules',
+      owner: alice.slotId,
+    }, 'ses_lead');
+    await service.executeAction('team.task_update', { taskId: task.taskId, status: 'deleted' }, 'ses_lead');
+
+    const [overview] = await service.overview();
+    const member = overview.members.find((entry) => entry.slotId === alice.slotId);
+    // The 'one' message plus the task_assignment the lead's create pushed.
+    expect(member.unreadCount).toBe(2);
+    expect(member.sessionId).toBe(alice.sessionId);
+    // Deleted tasks leave the board the panel renders; their history stays on disk.
+    expect(overview.tasks).toEqual([]);
+    expect(overview.recentMessages.length).toBeGreaterThan(0);
+    const lead = overview.members.find((entry) => entry.slotId === 'lead');
+    expect(lead.unreadCount).toBe(1);
+  });
+
+  it('survives a restart: members reload, busy falls back to idle, mail persists', async () => {
+    const { service, dataDir } = await makeService();
+    const { roster } = await makeTeam(service);
+    // Wake Alice so one member is busy when the process restarts.
+    await service.executeAction('team.send_message', { to: roster[0].slotId, message: 'hello' }, 'ses_lead');
+    let [team] = await service.snapshot();
+    expect(team.members.some((member) => member.status === 'busy')).toBe(true);
+    await service.flush();
+
+    const reloaded = createTeamService({
+      fsPromises: fs,
+      path,
+      dataDir,
+      buildOpenCodeUrl: () => 'http://127.0.0.1:1/api',
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => {},
+      createOpenCodeClient: () => ({}),
+      sessionService: { send: async () => {} },
+      broadcastUiEvent: () => {},
+    });
+    await reloaded.init();
+    services.push(reloaded);
+
+    [team] = await reloaded.snapshot();
+    expect(team.members.length).toBe(3);
+    expect(team.members.filter((member) => member.status === 'busy')).toEqual([]);
+    expect(team.mailbox.length).toBe(1);
+
+    // The reloaded session index answers for persisted members.
+    const { members } = await reloaded.executeAction('team.members', {}, roster[0].sessionId);
+    expect(members.length).toBe(3);
+  });
+});
+
+describe('createFromUi', () => {
+  it('creates the lead and member sessions, then briefs every member', async () => {
+    const { service, sent, broadcasts, openCodeState } = await makeService();
+    const result = await service.createFromUi({
+      name: 'Board Crew',
+      directory: '/work/project',
+      task: 'Собери отчёт',
+      members: [
+        { name: 'Лид', isLead: true, agent: 'build' },
+        { name: 'Альфа', agent: 'build', brief: 'Тесты' },
+      ],
+    });
+
+    expect(result.leadSessionId).toMatch(/^ses_/);
+    expect(result.members.map((member) => [member.role, member.status])).toEqual([
+      ['lead', 'busy'],
+      ['teammate', 'busy'],
+    ]);
+
+    const [leadCreate, mateCreate] = openCodeState.creates;
+    expect(leadCreate.parentID).toBeUndefined();
+    expect(leadCreate.metadata.openchamber.team).toMatchObject({ role: 'lead', name: 'Лид' });
+    expect(mateCreate.parentID).toBe(result.leadSessionId);
+    expect(mateCreate.title).toBe('Board Crew · Альфа');
+    expect(mateCreate.metadata.openchamber.team).toMatchObject({ role: 'teammate', name: 'Альфа' });
+
+    expect(sent[0].sessionID).toBe(result.leadSessionId);
+    expect(sent[0].payload.prompt).toContain('First Task From The User');
+    expect(sent[0].payload.prompt).toContain('Собери отчёт');
+    expect(sent[1].sessionID).not.toBe(result.leadSessionId);
+    expect(sent[1].payload.prompt).toContain('Do not invent work');
+
+    expect(broadcasts.filter((event) => event.type === 'openchamber:team-created')).toHaveLength(1);
+    expect(broadcasts.filter((event) => event.type === 'openchamber:team-members')).toHaveLength(1);
+
+    const [board] = await service.overview();
+    expect(board.members).toHaveLength(2);
+  });
+
+  it('treats the first member as the lead when none is flagged', async () => {
+    const { service, openCodeState } = await makeService();
+    await service.createFromUi({
+      name: 'Crew',
+      directory: '/work/project',
+      members: [{ name: 'Первый' }, { name: 'Второй', isLead: true }],
+    });
+    expect(openCodeState.creates[0].metadata.openchamber.team).toMatchObject({ role: 'lead', name: 'Второй' });
+    expect(openCodeState.creates[1].metadata.openchamber.team).toMatchObject({ role: 'teammate', name: 'Первый' });
+  });
+
+  it('rejects lineups the team model cannot express', async () => {
+    const { service } = await makeService();
+    const base = { name: 'Crew', directory: '/work/project' };
+    await expect(service.createFromUi({ ...base, members: [] })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.createFromUi({
+      ...base,
+      members: [{ name: 'A', isLead: true }, { name: 'B', isLead: true }],
+    })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.createFromUi({
+      ...base,
+      members: [{ name: 'A' }, { name: 'A' }],
+    })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.createFromUi({
+      ...base,
+      members: [{ name: 'A', agent: 'plan' }],
+    })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.createFromUi({
+      ...base,
+      members: [{ name: 'A', model: 'nope/model' }],
+    })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it('gates the selected skills and MCP servers as session permissions', async () => {
+    const { service, openCodeState } = await makeService();
+    await service.createFromUi({
+      name: 'Gated',
+      directory: '/work/project',
+      members: [{ name: 'Лид', isLead: true, skills: ['demo'], mcpServers: ['docs'] }],
+    });
+    expect(openCodeState.creates[0].permissions).toEqual([
+      { action: 'skill', resource: '*', effect: 'deny' },
+      { action: 'skill', resource: 'demo', effect: 'allow' },
+      { action: 'tracker_*', resource: '*', effect: 'deny' },
+    ]);
+
+    await service.createFromUi({
+      name: 'Ungated',
+      directory: '/work/project',
+      members: [{ name: 'Лид', isLead: true }],
+    });
+    expect(openCodeState.creates[1].permissions).toEqual([]);
+  });
+});

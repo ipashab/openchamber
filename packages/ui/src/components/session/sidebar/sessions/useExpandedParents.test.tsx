@@ -89,4 +89,38 @@ describe('parent expansion persistence', () => {
       second.dom.restore();
     }
   });
+
+  test('ensureExpanded adds missing keys, keeps existing ones and never removes', async () => {
+    const storage = createStorage(JSON.stringify(['project:active:lead-1']));
+    const mounted = await mountHook(storage);
+    try {
+      // Both team contexts of one lead plus an already-present key: only the
+      // gaps land in storage, and a later collapse still removes for good.
+      await act(async () => mounted.capture.value!.ensureExpanded([
+        'project:active:lead-1',
+        'recent:active:lead-1',
+        'project:active:lead-2',
+      ]));
+      expect(mounted.capture.value!.expandedParents).toEqual(new Set([
+        'project:active:lead-1',
+        'recent:active:lead-1',
+        'project:active:lead-2',
+      ]));
+      const written = JSON.parse(storage.getItem(SESSION_EXPANDED_STORAGE_KEY) ?? 'null');
+      expect(written).toEqual([
+        'project:active:lead-1',
+        'recent:active:lead-1',
+        'project:active:lead-2',
+      ]);
+
+      await act(async () => mounted.capture.value!.ensureExpanded(['project:active:lead-1']));
+      expect(mounted.capture.value!.expandedParents.size).toBe(3);
+
+      await act(async () => mounted.capture.value!.toggleParent('recent:active:lead-1'));
+      expect(mounted.capture.value!.expandedParents.has('recent:active:lead-1')).toBe(false);
+    } finally {
+      await act(async () => mounted.root.unmount());
+      mounted.dom.restore();
+    }
+  });
 });

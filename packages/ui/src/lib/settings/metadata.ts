@@ -15,6 +15,7 @@ export type SettingsPageSlug =
   | 'commands'
   | 'mcp'
   | 'plugins'
+  | 'team-presets'
   | 'skills.installed'
   | 'skills.catalog'
   | 'git'
@@ -148,6 +149,13 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'opencode',
     kind: 'single',
     keywords: ['plugin', 'plugins', 'addons', 'npm', 'opencode-wakatime'],
+  },
+  {
+    slug: 'team-presets',
+    title: 'Teams',
+    group: 'opencode',
+    kind: 'single',
+    keywords: ['team', 'teams', 'preset', 'presets', 'teammate', 'lead', 'crew', 'new team'],
   },
   {
     slug: 'skills.installed',

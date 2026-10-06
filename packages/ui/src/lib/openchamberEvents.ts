@@ -74,6 +74,13 @@ type AgentMemoryChangedEvent = {
 };
 
 /**
+ * One team's roster, mailbox or board moved. Like the memory event it carries
+ * only which team changed: the team panel refetches, so a frame that raced a
+ * second change cannot leave it rendering an older board than it fetched.
+ */
+type TeamChangedEvent = { type: 'team-changed'; teamId: string };
+
+/**
  * The extension chosen as browser provider can no longer serve (paused,
  * removed, or approval withdrawn), so the server put the in-app browser back.
  * The setting is already written; listeners update the store and tell the user.
@@ -163,7 +170,8 @@ type OpenChamberEvent =
   | BrowserControlRequestEvent
   | FileOpenRequestEvent
   | BrowserProviderResetEvent
-  | AgentMemoryChangedEvent;
+  | AgentMemoryChangedEvent
+  | TeamChangedEvent;
 type Listener = (event: OpenChamberEvent) => void;
 
 const worktreeChangedPropertiesSchema = z.object({
@@ -414,6 +422,21 @@ const dispatchFromEnvelope = (envelope: { type: string; properties: unknown }) =
     };
     for (const listener of listeners) {
       listener(nextEvent);
+    }
+    return;
+  }
+
+  // Every team frame shares one meaning for the panel: this team moved. The
+  // frames differ only in what moved, which the refetch covers anyway, so
+  // the discriminator is the prefix rather than five duplicated branches.
+  if (envelope.type.startsWith('openchamber:team-')) {
+    const properties = getEventProperties(envelope.properties);
+    const teamId = typeof properties?.teamId === 'string' ? properties.teamId : '';
+    if (!teamId) {
+      return;
+    }
+    for (const listener of listeners) {
+      listener({ type: 'team-changed', teamId });
     }
     return;
   }

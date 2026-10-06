@@ -30,6 +30,7 @@ import { RunSidebarRow } from '../sessions/RunSidebarRow';
 import { computeNodeStructureKey, nodeContainsSessionId } from '../sessions/sessionNodeItemUtils';
 import { DroppableFolderWrapper } from '../folders/sessionFolderDnd';
 import { FolderDeleteConfirmDialog, type DeleteFolderConfirmState } from '../shell/ConfirmDialogs';
+import { NewTeamDialog } from '../../team/NewTeamDialog';
 import type { SessionGroup } from '../types';
 import { SessionSidebarRows } from '../SessionSidebarRows';
 import { SessionSidebarActivityHeader } from '../sessionSidebarHeaderPresentation';
@@ -135,6 +136,7 @@ function SessionProjectScrollerComponent({ model, view, actions }: Props): React
   // A project's isolated spaces page: while the feature's switch is on, and never in VS Code (decision 16).
   const spacesPageAvailable = useUIStore((state) => state.isolatedSpacesEnabled) && !isVSCodeRuntime();
   const [folderDeleteConfirm, setFolderDeleteConfirm] = React.useState<DeleteFolderConfirmState>(null);
+  const [teamDialogOpen, setTeamDialogOpen] = React.useState(false);
   const [stickyIdentity, setStickyIdentity] = React.useState<string | null>(null);
   const [focusedRowKey, setFocusedRowKey] = React.useState<string | null>(null);
   const [scrollElement, setScrollElement] = React.useState<HTMLElement | null>(null);
@@ -304,6 +306,11 @@ function SessionProjectScrollerComponent({ model, view, actions }: Props): React
             useUIStore.getState().closeMainSurfaces();
             if (view.mobileVariant) actions.setSessionSwitcherOpen(false);
             actions.openNewSessionDraft({ selectedProjectId: CHAT_DRAFT_PROJECT_ID, directoryOverride: null });
+          }}
+          onNewTeam={() => {
+            useUIStore.getState().closeMainSurfaces();
+            if (view.mobileVariant) actions.setSessionSwitcherOpen(false);
+            setTeamDialogOpen(true);
           }}
         />
       </CrossfadeZoneHeader>;
@@ -542,6 +549,7 @@ function SessionProjectScrollerComponent({ model, view, actions }: Props): React
       setFolderDeleteConfirm(null);
     }} />
     {archiveAllConfirm.dialog}
+    <NewTeamDialog open={teamDialogOpen} onOpenChange={setTeamDialogOpen} />
   </div>;
 }
 

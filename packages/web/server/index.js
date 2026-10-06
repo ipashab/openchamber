@@ -148,6 +148,9 @@ import { createDevTunnelRuntime } from './lib/dev-tunnel/runtime.js';
 import { registerBrowserControlRoutes } from './lib/browser-control/routes.js';
 import { createManagedConfigRuntime } from './lib/opencode/managed-config-file.js';
 import { createOpenChamberSessionService } from './lib/openchamber-sessions/routes.js';
+import { createOpenCodeClient as createSessionScopedOpenCodeClient } from './lib/openchamber-sessions/opencode-client.js';
+import { createTeamService } from './lib/team/service.js';
+import { createTeamPresetStore } from './lib/team/presets.js';
 import { createSessionMetadataStore, createOpenCodeSessionMetadata } from './lib/openchamber-sessions/session-metadata-store.js';
 import { createOpenCodeClient } from './lib/openchamber-sessions/opencode-client.js';
 import { createScheduledTaskService } from './lib/scheduled-tasks/service.js';
@@ -1148,6 +1151,9 @@ globalMessageStreamHub.subscribeEvent((event) => {
     sessionGoalRuntime.processPayload(payload, directory || payload.properties?.directory || '');
     contextObligatoryRuntime.processPayload(payload, directory || payload.properties?.directory || '');
     linearSessionStatusRuntime.processPayload(payload);
+    // Team Mode orchestration: member turn ends, failures and deletions. One
+    // Map lookup per event; non-team sessions return immediately.
+    void teamService.processPayload(payload).catch(() => {});
   }
 });
 
@@ -1655,6 +1661,25 @@ const openChamberSessionService = createOpenChamberSessionService({
   resolveAutoSelection: (input) => routingRuntime.resolveAutoSelection(input),
   isAutoReady: async () => (await routingRuntime.describe()).autoReady,
 });
+// Team Mode: lead + teammates as peer sessions coordinated through the
+// `openchamber_team` managed tool. State is OpenChamber's own (teams.json in
+// the data dir); the sessions themselves are ordinary OpenCode sessions.
+const teamService = createTeamService({
+  fsPromises,
+  path,
+  dataDir: OPENCHAMBER_DATA_DIR,
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+  waitForOpenCodeReady,
+  createOpenCodeClient: createSessionScopedOpenCodeClient,
+  sessionService: openChamberSessionService,
+  broadcastUiEvent: broadcastOpenChamberUiEvent,
+});
+void teamService.init().catch((error) =>
+  console.warn('[team] could not initialize team state:', error?.message ?? error));
+// Presets for the "New Team" dialog: built-in recipes plus the user's own,
+// persisted next to teams.json.
+const teamPresets = createTeamPresetStore({ fsPromises, path, dataDir: OPENCHAMBER_DATA_DIR });
 // Browser actions are published to whichever OpenChamber clients are connected;
 // the one owning the browser panel answers. `emitRequest` returns the number of
 // clients reached so the broker can fail fast when nobody is listening.
@@ -1887,6 +1912,8 @@ async function main(options = {}) {
     dataDir: OPENCHAMBER_DATA_DIR,
     env: process.env,
     executeAction: (...args) => openChamberControlService.execute(...args),
+    executeTeamAction: (action, input, sessionID, options) =>
+      teamService.executeAction(action, input, sessionID, options),
     // A v2 tool call carries no directory, only the session it runs in.
     resolveSessionDirectory: (sessionID) => openChamberControlService.resolveSessionDirectory(sessionID),
     getActivePort: () => {
@@ -2420,6 +2447,8 @@ async function main(options = {}) {
     createFsSearchRuntime: createFsSearchRuntimeFactory,
     openchamberDataDir: OPENCHAMBER_DATA_DIR,
     openchamberVersion: OPENCHAMBER_VERSION,
+    teamService,
+    teamPresets,
     onGuestDeactivated: async (event) => {
       guestSurfaceRuntime?.endForGuest(event.guestId);
       return browserControlRouter.handleGuestDeactivated(event);
