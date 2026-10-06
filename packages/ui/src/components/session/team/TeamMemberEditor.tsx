@@ -21,6 +21,17 @@ export type TeamOption = { value: string; label: string };
 /** The "use the default" entry of the agent and model selects. */
 const DEFAULT_VALUE = '__default__';
 
+// Base UI's SelectValue prints the raw value; map it back to the option
+// label so the trigger never shows the sentinel.
+const selectedLabel = (
+  value: string | undefined,
+  fallback: string,
+  options: readonly { value: string; label: string }[],
+): React.ReactNode => {
+  if (value === undefined || value === DEFAULT_VALUE) return fallback;
+  return options.find((option) => option.value === value)?.label ?? value;
+};
+
 const MAX_MEMBERS = 10;
 
 const toggleInList = (list: readonly string[], value: string): string[] =>
@@ -182,9 +193,15 @@ export const TeamMemberEditor: React.FC<Props> = ({
               <Select
                 value={member.agent ?? DEFAULT_VALUE}
                 onValueChange={(value) => patch(index, { agent: value === DEFAULT_VALUE ? null : value })}
+                items={[
+                  { value: DEFAULT_VALUE, label: t('team.create.member.agentDefault') },
+                  ...agentOptions.map((option) => ({ value: option.value, label: option.label })),
+                ]}
               >
                 <SelectTrigger size="sm" className="h-8 w-full">
-                  <SelectValue />
+                  <SelectValue>
+                    {(value) => selectedLabel(value, t('team.create.member.agentDefault'), agentOptions)}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={DEFAULT_VALUE}>{t('team.create.member.agentDefault')}</SelectItem>
@@ -196,9 +213,15 @@ export const TeamMemberEditor: React.FC<Props> = ({
               <Select
                 value={member.model ?? DEFAULT_VALUE}
                 onValueChange={(value) => patch(index, { model: value === DEFAULT_VALUE ? null : value })}
+                items={[
+                  { value: DEFAULT_VALUE, label: t('team.create.member.modelDefault') },
+                  ...modelOptions.map((option) => ({ value: option.value, label: option.label })),
+                ]}
               >
                 <SelectTrigger size="sm" className="h-8 w-full">
-                  <SelectValue />
+                  <SelectValue>
+                    {(value) => selectedLabel(value, t('team.create.member.modelDefault'), modelOptions)}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={DEFAULT_VALUE}>{t('team.create.member.modelDefault')}</SelectItem>
