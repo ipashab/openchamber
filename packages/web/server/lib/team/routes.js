@@ -9,6 +9,12 @@
  * Team" dialog, and the presets that dialog offers.
  */
 
+import express from 'express';
+
+// This server parses JSON per route, not globally; every POST here that
+// reads req.body needs the parser attached to the route itself.
+const jsonBody = express.json({ limit: '1mb' });
+
 export const registerTeamRoutes = (app, dependencies) => {
   const { teamService, teamPresets } = dependencies;
   if (!teamService) throw new Error('team routes need a team service');
@@ -29,7 +35,7 @@ export const registerTeamRoutes = (app, dependencies) => {
   // Create a team from the app. The service validates the lineup against the
   // live agent/model catalog and answers with TeamError status codes, which
   // pass through so the dialog can show the reason.
-  app.post('/api/openchamber/teams', async (req, res) => {
+  app.post('/api/openchamber/teams', jsonBody, async (req, res) => {
     try {
       const result = await teamService.createFromUi(req.body ?? {});
       return res.status(201).json(result);
@@ -53,7 +59,7 @@ export const registerTeamRoutes = (app, dependencies) => {
     }
   });
 
-  app.post('/api/openchamber/team-presets', async (req, res) => {
+  app.post('/api/openchamber/team-presets', jsonBody, async (req, res) => {
     try {
       const preset = await teamPresets.upsert(req.body ?? {});
       return res.json({ preset });

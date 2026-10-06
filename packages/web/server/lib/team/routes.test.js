@@ -4,7 +4,9 @@ import { registerTeamRoutes } from './routes.js';
 
 const makeApp = () => {
   const routes = [];
-  const record = (method) => (path, handler) => routes.push({ method, path, handler });
+  // Registration may pass route middleware (express.json) before the handler;
+  // the last argument is the handler the tests invoke.
+  const record = (method) => (path, ...handlers) => routes.push({ method, path, handler: handlers.at(-1) });
   return {
     routes,
     get: record('GET'),

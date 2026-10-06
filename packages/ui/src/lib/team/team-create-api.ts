@@ -45,13 +45,28 @@ export const teamCreateResultSchema = z.object({
 
 export type TeamCreateResult = z.infer<typeof teamCreateResultSchema>;
 
+/**
+ * A member as the create route accepts it: the tool and lead fields may be
+ * omitted entirely — the server normalizes what is missing and resolves
+ * defaults from the catalog.
+ */
+export type TeamCreateMember = {
+  name: string;
+  agent?: string | null;
+  model?: string | null;
+  brief?: string | null;
+  skills?: string[];
+  mcpServers?: string[];
+  isLead?: boolean;
+};
+
 /** A team as the create route wants it: a preset plus where it works. */
 export type TeamCreateRequest = {
   name: string;
   description?: string | null;
   directory: string;
   task?: string | null;
-  members: TeamPresetMember[];
+  members: TeamCreateMember[];
 };
 
 const jsonHeaders = { 'content-type': 'application/json', accept: 'application/json' };
