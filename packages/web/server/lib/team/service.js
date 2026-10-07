@@ -1258,6 +1258,69 @@ export const createTeamService = (dependencies) => {
     };
   };
 
+  /**
+   * The board's quick-add: a task the user puts on the board from the panel.
+   * Same semantics as the lead's task_create — an owner, if given, is
+   * notified through the mailbox and woken with the task details — with one
+   * difference: the author is the user, marked by the 'user' pseudo-id the
+   * panel renders as "You" where a slotId would name a teammate.
+   */
+  const createTaskFromUi = async ({ teamId, input }) => {
+    await load();
+    const team = getTeam(asNonEmptyString(teamId));
+    if (!team) throw new TeamError(`No team with id '${teamId}'`, 404);
+
+    const subject = asNonEmptyString(input?.subject);
+    if (!subject) throw new TeamError('subject is required: what the task asks for', 400);
+    const owner = asNonEmptyString(input?.owner);
+    // The lead coordinates the board; a task with an owner needs a teammate
+    // the assignment can wake. Unknown slots fail the same way the tool path
+    // fails, so the dialog's picker and the lead share one contract.
+    const ownerRecord = owner ? requireSlot(team, owner) : null;
+
+    const task = {
+      taskId: shortId('task'),
+      subject: subject.slice(0, 200),
+      description: asNonEmptyString(input?.description) || null,
+      status: 'pending',
+      owner: owner || null,
+      blockedBy: [],
+      createdBy: 'user',
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    team.tasks.push(task);
+    trimTeamState(team);
+    schedulePersist();
+    broadcast('openchamber:team-task', { teamId: team.id, change: 'created', taskId: task.taskId });
+    if (ownerRecord) {
+      // An assignment is itself the notification: the mailbox entry wakes the
+      // owner with the task details, exactly like the lead's tool path.
+      const details = [task.subject, asNonEmptyString(task.description)].filter(Boolean).join('\n');
+      pushMessage(team, {
+        to: ownerRecord.slotId,
+        from: 'user',
+        type: 'task_assignment',
+        content: `Task assigned to you: ${details}`,
+        summary: task.subject,
+      });
+      await wakeMember(team, ownerRecord).catch(() => {});
+    }
+    return {
+      task: {
+        taskId: task.taskId,
+        subject: task.subject,
+        description: task.description,
+        status: task.status,
+        owner: task.owner,
+        blockedBy: task.blockedBy,
+        createdBy: task.createdBy,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+      },
+    };
+  };
+
   /** The "Edit team" dismissal: the lead handshake, requested by the user. */
   const shutdownMemberFromUi = async ({ teamId, slotId, reason }) => {
     await load();
@@ -1626,6 +1689,8 @@ export const createTeamService = (dependencies) => {
     createFromUi,
     /** The "Edit team" flow: change a live roster from the app itself. */
     addMemberFromUi,
+    /** The board's quick-add: a task the user puts on from the panel. */
+    createTaskFromUi,
     shutdownMemberFromUi,
     exportPresetFromUi,
     /** The activity feed route: the retained streams, merged and paged. */

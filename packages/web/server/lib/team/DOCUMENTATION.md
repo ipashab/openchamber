@@ -130,6 +130,11 @@ The app's own team management rides the same routes:
 - `POST /api/openchamber/teams/:teamId/members` — the live-roster editor:
   one member added to a running team, walking the spawn path with the card's
   tool allowances (skills, MCP servers) applied as session permissions.
+- `POST /api/openchamber/teams/:teamId/tasks` — the board's quick-add: a task
+  the user files from the panel without asking the lead to relay it. An owner,
+  if given, gets the lead's own assignment semantics — the mailbox entry is
+  the notification, the wake carries the details. Tasks created this way carry
+  the `'user'` pseudo-id in `createdBy`, which the panel renders as "You".
 - `POST /api/openchamber/teams/:teamId/members/:slotId/shutdown` — the
   dismissal button of the live-roster editor; the same approval handshake
   the lead tool uses, requested by the user.

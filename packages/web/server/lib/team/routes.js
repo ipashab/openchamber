@@ -75,6 +75,21 @@ export const registerTeamRoutes = (app, dependencies) => {
     }
   });
 
+  // The board's quick-add: a task the user creates from the panel. Assigning
+  // an owner rides the same assignment semantics as the lead's tool — the
+  // owner's mailbox entry is the notification and the wake carries the
+  // details — so the user never needs the lead to relay their own work item.
+  app.post('/api/openchamber/teams/:teamId/tasks', jsonBody, async (req, res) => {
+    try {
+      const result = await teamService.createTaskFromUi({ teamId: req.params?.teamId, input: req.body ?? {} });
+      return res.status(201).json(result);
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+      if (status >= 500) console.error('[team] task creation failed:', error?.message ?? error);
+      return res.status(status).json({ error: error?.message ?? 'Failed to create task' });
+    }
+  });
+
   // The live roster as a preset recipe: read-only, feeding the team editor's
   // "Save as preset" and "Download JSON" actions. The shape is the preset JSON
   // the shelf round-trips, so the download imports back without conversion.
