@@ -12,6 +12,7 @@ const baseProps = {
   showRecentControls: true,
   handleOpenDirectoryDialog: () => undefined,
   onOpenScheduled: () => undefined,
+  onOpenMissions: () => undefined,
   onOpenMultiRun: () => undefined,
   canOpenMultiRun: true,
   onOpenArchive: () => undefined,

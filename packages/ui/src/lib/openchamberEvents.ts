@@ -80,6 +80,13 @@ type AgentMemoryChangedEvent = {
  */
 type TeamChangedEvent = { type: 'team-changed'; teamId: string };
 
+/*
+ * Same sharing as the team frames: every mission frame means "the list
+ * moved", and the panel refetches, so the missionId is a best-effort
+ * pointer rather than required payload.
+ */
+type MissionChangedEvent = { type: 'mission-changed'; missionId: string };
+
 /**
  * The extension chosen as browser provider can no longer serve (paused,
  * removed, or approval withdrawn), so the server put the in-app browser back.
@@ -171,7 +178,8 @@ type OpenChamberEvent =
   | FileOpenRequestEvent
   | BrowserProviderResetEvent
   | AgentMemoryChangedEvent
-  | TeamChangedEvent;
+  | TeamChangedEvent
+  | MissionChangedEvent;
 type Listener = (event: OpenChamberEvent) => void;
 
 const worktreeChangedPropertiesSchema = z.object({
@@ -437,6 +445,18 @@ const dispatchFromEnvelope = (envelope: { type: string; properties: unknown }) =
     }
     for (const listener of listeners) {
       listener({ type: 'team-changed', teamId });
+    }
+    return;
+  }
+
+  if (envelope.type.startsWith('openchamber:mission-')) {
+    const properties = getEventProperties(envelope.properties);
+    const missionId = typeof properties?.missionId === 'string' ? properties.missionId : '';
+    if (!missionId) {
+      return;
+    }
+    for (const listener of listeners) {
+      listener({ type: 'mission-changed', missionId });
     }
     return;
   }
