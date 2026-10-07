@@ -8,6 +8,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { useTeamBoard } from '@/hooks/useTeamBoard';
 import { useTeamMemberColors } from '@/hooks/useTeamMemberColors';
+import { useTeamMembershipStore } from '@/lib/team/teamMembership';
 import { fetchTeamBoards, TEAM_DOMAIN_LABEL_KEYS, type TeamMember, type TeamTask } from '@/lib/team/team-board-api';
 import { WorkStatusCollapsibleSection, WorkStatusRow, WorkStatusValue } from './WorkStatusPrimitives';
 import { useReportWorkStatusPresence } from './presenceContext';
@@ -65,6 +66,14 @@ export const WorkStatusTeamSection: React.FC<Props> = ({ sessionId, directory, f
   const { t } = useI18n();
   const { board, loading } = useTeamBoard(sessionId, fetcher ? { fetchTeamBoards: fetcher } : {});
   const colorOf = useTeamMemberColors(board);
+  // Publishing the answer for the cheap consumers: the selection menu reads
+  // this instead of fetching per mounted message. The write is idempotent.
+  const setSessionTeam = useTeamMembershipStore((state) => state.setSessionTeam);
+  React.useEffect(() => {
+    // A null session id has no key to publish; the section renders nothing.
+    if (!sessionId) return;
+    setSessionTeam(sessionId, loading ? null : board?.id ?? null);
+  }, [sessionId, board?.id, loading, setSessionTeam]);
   const isMobile = useUIStore((state) => state.isMobile);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
