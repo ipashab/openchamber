@@ -16,9 +16,11 @@ import type { TeamTask, TeamTaskStatus } from '@/lib/team/team-board-api';
 
 type TaskVisual = { icon: IconName; color?: string };
 
+type TaskVisuals = { [status in TeamTaskStatus]: TaskVisual };
+
 // Тот же набор иконок, что и у карточек доски: диалог продолжает визуальный
 // язык доски, а не вводит свои обозначения статусов.
-const TASK_VISUALS: Record<TeamTaskStatus, TaskVisual> = {
+const TASK_VISUALS: TaskVisuals = {
   in_progress: { icon: 'record-circle', color: 'var(--status-info)' },
   pending: { icon: 'time' },
   completed: { icon: 'checkbox-circle', color: 'var(--status-success)' },
@@ -31,6 +33,8 @@ type Props = {
   task: TeamTask;
   /** slotId → отображаемое имя участника; чужие слоты выходят как есть. */
   nameOf: (slotId: string) => string;
+  /** slotId → identity-цвет участника; отсутствует — имя без подкраски. */
+  colorOf?: (slotId: string) => string | undefined;
   /** taskId → тема задачи; для зависимостей, которых уже нет на доске, — сам id. */
   subjectOf: (taskId: string) => string;
 };
@@ -40,7 +44,7 @@ type Props = {
  * которым будят исполнителя), статус, владелец, зависимости и даты. Доска
  * остаётся местом обзора — три строки на карточку; детали живут здесь.
  */
-export const TeamTaskDetailsDialog: React.FC<Props> = ({ open, onOpenChange, task, nameOf, subjectOf }) => {
+export const TeamTaskDetailsDialog: React.FC<Props> = ({ open, onOpenChange, task, nameOf, colorOf, subjectOf }) => {
   const { t } = useI18n();
   const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
   const visual = TASK_VISUALS[task.status];
@@ -54,6 +58,13 @@ export const TeamTaskDetailsDialog: React.FC<Props> = ({ open, onOpenChange, tas
     });
 
   const blockedBy = task.blockedBy.map(subjectOf);
+
+  // Чужие слоты (участник покинул команду) выходят без цвета: подкраска имени
+  // — подсказка «чей это», а не признак действующего состава.
+  const memberName = (slotId: string): React.ReactNode => {
+    const color = colorOf?.(slotId);
+    return color ? <span style={{ color }}>{nameOf(slotId)}</span> : nameOf(slotId);
+  };
 
   const metaRow = (label: string, value: React.ReactNode, key: string) => (
     <div key={key} className="flex min-w-0 items-baseline gap-2 text-[13px]">
@@ -86,11 +97,11 @@ export const TeamTaskDetailsDialog: React.FC<Props> = ({ open, onOpenChange, tas
             )}
             {metaRow(
               t('chat.workStatus.teamBoard.taskDetails.owner'),
-              task.owner ? nameOf(task.owner) : t('chat.workStatus.teamBoard.unassigned'),
+              task.owner ? memberName(task.owner) : t('chat.workStatus.teamBoard.unassigned'),
               'owner',
             )}
             {task.createdBy
-              ? metaRow(t('chat.workStatus.teamBoard.taskDetails.createdBy'), nameOf(task.createdBy), 'createdBy')
+              ? metaRow(t('chat.workStatus.teamBoard.taskDetails.createdBy'), memberName(task.createdBy), 'createdBy')
               : null}
             {blockedBy.length > 0
               ? metaRow(t('chat.workStatus.teamBoard.taskDetails.blockedBy'), blockedBy.join(', '), 'blockedBy')
