@@ -3331,6 +3331,8 @@ export const dict = {
   'chat.workStatus.teamBoard.group.byStatus': 'Duruma göre',
   'chat.workStatus.teamBoard.group.byMember': 'Ajan başına',
   'chat.workStatus.teamBoard.group.byDomain': 'Alt ekibe göre',
+  'chat.workStatus.teamBoard.view.board': 'Pano',
+  'chat.workStatus.teamBoard.view.chats': 'Sohbetler',
   'chat.workStatus.teamBoard.status.pending': 'Planlandı',
   'chat.workStatus.teamBoard.status.in_progress': 'Devam ediyor',
   'chat.workStatus.teamBoard.status.completed': 'Tamamlandı',

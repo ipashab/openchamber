@@ -21,6 +21,7 @@ const GitView = lazyWithChunkRecovery(() => import('@/components/views/GitView')
 const PlanView = lazyWithChunkRecovery(() => import('@/components/views/PlanView').then((m) => ({ default: m.PlanView })));
 import { ProjectContextPanel } from './RightSidebarTabs';
 import { TeamBoardView } from '@/components/chat/work-status/TeamBoardView';
+import type { TeamMember } from '@/lib/team/team-board-api';
 import { SidebarFilesTree } from './SidebarFilesTree';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRepositoryReferenceProvider } from '@/components/references/referenceSources';
@@ -866,6 +867,17 @@ export const ContextPanel: React.FC = () => {
     [activeChatSessionID, directoryKey],
   );
 
+  // Injected by the panel on purpose: TeamBoardView importing ChatView
+  // directly would close the ChatContainer → WorkStatusPanel → … →
+  // TeamBoardView module cycle. The board view owns the toggle; the panel
+  // owns the pinned chat columns.
+  const renderTeamChatColumn = React.useCallback(
+    (member: TeamMember, directory: string): React.ReactNode => (
+      <ChatView readOnly pinnedSession={{ sessionId: member.sessionId, directory }} />
+    ),
+    [],
+  );
+
   React.useEffect(() => {
     if (!isOpen || !directoryKey || !activeChatSessionID || typeof window === 'undefined') {
       return;
@@ -953,6 +965,7 @@ export const ContextPanel: React.FC = () => {
                 ? <div className="flex h-full min-h-0 flex-col p-3"><TeamBoardView
                     sessionId={getTeamSessionIDFromDedupeKey(activeTab.dedupeKey)}
                     directory={effectiveDirectory}
+                    chatColumn={renderTeamChatColumn}
                   /></div>
             : null;
 
