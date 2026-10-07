@@ -7,6 +7,9 @@
 
 <a href="https://www.blacksmith.sh/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/references/badges/blacksmith-dark.svg"><img src="docs/references/badges/blacksmith-light.svg" height="28" alt="CI powered by Blacksmith" /></picture></a>
 
+> [!NOTE]
+> **This fork adds Team Mode** — run a team of coding agents (a lead you chat with, teammates with their own roles) with a shared task board, live roster, pull-request badges and a team activity feed, all observable from one panel. Plus **Missions**: goal prompts filed into a paced queue. The full list, commit by commit: [README-FORK.md](README-FORK.md).
+
 ## Run agent work. Keep control. Ship from anywhere.
 
 **OpenChamber is an open-source workspace for running and reviewing AI coding work on desktop, web, VS Code, and mobile.**
@@ -26,6 +29,80 @@ Start agent work, see what changed, and take it through review and release. Your
 </p>
 
 </details>
+
+## Team Mode — run a team of agents, watch it from one panel
+
+Team Mode turns sessions into a staffed team: a **lead** you chat with, plus
+teammates that each own a role. The lead decomposes work onto a shared board,
+teammates pick tasks up, report back, and every move stays visible from the
+chat you already know.
+
+<p>
+<img src="docs/references/fork/team-create-presets.jpg" width="45%" alt="New team dialog with built-in and saved presets">
+<img src="docs/references/fork/team-board.jpg" width="45%" alt="Team board with task columns, member chips and sub-team grouping">
+</p>
+
+### Create a team in one dialog
+
+Start from a **preset** — built-in lineups (engineering crew, analysts, a duo)
+or your own saved rosters — or compose an empty team. Every member gets a
+name, a role brief, an agent, a model, and optional skills and MCP servers.
+The optional first task is delegated by the lead as soon as the team starts.
+[Details](README-FORK.md#team-mode-core--faa3ab9-480cdfa)
+
+<img src="docs/references/fork/team-create-editor.jpg" width="60%" alt="Team editor: name, description, members with roles, agent, model, skills and MCP servers" />
+
+### The roster, alive
+
+The work-status panel grows a **Team** section: every member with its live
+state (starting, busy, idle, failed) and a stable identity color shared by
+the roster, the board and the activity feed. Edit the roster of a live team —
+add members, re-brief, remove — and organize them into **sub-teams**
+(analytics, development, review, QA), each with its own lead.
+[Details](README-FORK.md#sub-teams-and-live-roster-editing--644f61d)
+
+<img src="docs/references/fork/team-roster.jpg" alt="Work-status panel showing the team roster with live statuses" />
+
+### The shared task board
+
+One board for the whole team — tasks with subject, brief, owner and
+blocked-by chain, grouped **by status, by teammate, or by sub-team**. File a
+task yourself with quick-add, or straight from a chat selection with the
+**Team task** action. Set a `prUrl` and the card answers for its pull
+request: draft or open, mergeability, CI green or failing — refreshed from
+GitHub. [Details](README-FORK.md#task-details-and-portable-presets--4fe541e-30bd143-9e58674)
+
+<img src="docs/references/fork/task-details.jpg" alt="Task details dialog with owner, brief and pull-request link" />
+
+### Ask the lead to staff a role
+
+Need "someone to review diffs in French" but no idea which agent fits? Ask
+the lead from the roster — it proposes a named agent with a brief, and you
+confirm or edit before anyone joins.
+[Details](README-FORK.md#ask-the-lead-to-staff--5c96ebd)
+
+### The team's activity, in one feed
+
+Messages, task writes, PR changes — the team's moves in a shared, paged
+activity feed with per-member colors, plus a **Chats** face that mirrors
+each member's conversation. [Details](README-FORK.md#the-activity-face--c79d405)
+
+## Missions — goals that queue themselves
+
+A **Goals** page in the sidebar: file a goal prompt, choose how to run it —
+a fresh **single session**, or a lead-led **team** whose first task it is —
+and walk away. The queue runs two goals at a time, watches each working
+session to completion, and survives restarts. Retry, cancel, or jump into
+the working session right from the list.
+[Details](README-FORK.md#missions-goals-filed-into-a-paced-queue--7695098)
+
+<img src="docs/references/fork/missions-form.jpg" width="60%" alt="New mission form: title, goal, single-session or team mode, project" />
+
+## /compactnew — long chat, fresh start
+
+`/compact` compacts a long chat in place; `/compactnew` compacts it and
+**continues in a fresh chat** seeded with the summary. The old chat stays in
+the list as the archive. [Details](README-FORK.md#compactnew-continues-a-long-chat-in-a-fresh-one--eb2fa71)
 
 ## What you can do with OpenChamber
 
