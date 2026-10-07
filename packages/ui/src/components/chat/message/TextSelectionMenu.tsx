@@ -27,6 +27,8 @@ import {
 } from '../composer/comment/MobileCommentComposerContext';
 import { rangeToMarkdown, trimSelectionValue, wrapMarkdownSelectionForChat } from './selectionMarkdown';
 import { registerActiveSelectionToolbar } from '@/lib/addSelectionToChat';
+import { useTeamMembershipStore } from '@/lib/team/teamMembership';
+import { createTeamTask } from '@/lib/team/team-board-api';
 import { collectSelectionOverlayRects } from '@/lib/selectionOverlayRects';
 import { captureChatQuoteAnchor, type ChatQuoteAnchor } from '@/lib/chatQuoteAnchor';
 import {
@@ -503,6 +505,37 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     addMarkdownToChat(selectedTextMarkdown);
   }, [addMarkdownToChat, selectedTextMarkdown]);
 
+  // The session's team membership, published by the team section that already
+  // resolved the board: cheap enough for a per-message menu, invisible in
+  // chats that belong to no team.
+  const sessionTeamId = useTeamMembershipStore((state) => (currentSessionId ? state.sessionTeams[currentSessionId] ?? null : null));
+  const [isAddingTask, setIsAddingTask] = React.useState(false);
+  const handleAddToTeamBoard = React.useCallback(() => {
+    if (!sessionTeamId) return;
+    const selection = selectedTextMarkdown?.trim() || selectedText.trim();
+    if (!selection) return;
+    const firstLine = selection.split('\n').map((line) => line.trim()).filter(Boolean)[0] ?? '';
+    if (!firstLine) return;
+    setIsAddingTask(true);
+    createTeamTask(sessionTeamId, {
+      // The subject is the first line — what the board shows; everything the
+      // selection carried beyond it rides along as the brief.
+      subject: firstLine.slice(0, 200),
+      description: selection.length > firstLine.length ? selection : undefined,
+    })
+      .then(() => {
+        toast.success(t('chat.textSelection.toast.teamTaskAdded'));
+      })
+      .catch(() => {
+        toast.error(t('chat.textSelection.toast.teamTaskFailed'));
+      })
+      .finally(() => {
+        setIsAddingTask(false);
+        hideMenu();
+        window.getSelection()?.removeAllRanges();
+      });
+  }, [hideMenu, selectedText, selectedTextMarkdown, sessionTeamId, t]);
+
   const handleAskOpenChamber = React.useCallback(() => {
     if (!currentSessionId || !selectedTextMarkdown) return;
     requestBtwComposer({
@@ -840,6 +873,25 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
               </button>
             ) : null}
 
+            {sessionTeamId ? (
+              <button
+                onClick={handleAddToTeamBoard}
+                disabled={isAddingTask}
+                className={cn(
+                  'flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
+                  'text-sm font-medium leading-tight',
+                  'bg-[var(--surface-muted)] text-[var(--surface-foreground)]',
+                  'active:opacity-80 disabled:opacity-60 disabled:cursor-not-allowed',
+                  'transition-opacity duration-150'
+                )}
+                title={t('chat.textSelection.title.addTeamTask')}
+                type="button"
+              >
+                {isAddingTask ? <Icon name="loader-4" className="h-5 w-5 flex-shrink-0 animate-spin" /> : <Icon name="task" className="h-5 w-5 flex-shrink-0" />}
+                <span className="min-w-0 whitespace-normal">{t('chat.textSelection.actions.addTeamTask')}</span>
+              </button>
+            ) : null}
+
             {!isVSCodeRuntime() ? (
               <button
                 onClick={handleAddToNotes}
@@ -918,6 +970,28 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
                 type="button"
               >
                 {t('chat.textSelection.actions.askOpenChamber')}
+              </button>
+            </>
+          ) : null}
+
+          {sessionTeamId ? (
+            <>
+              <div className="mx-0.5 h-5 w-px shrink-0 bg-[var(--interactive-border)]" />
+              <button
+                onClick={handleAddToTeamBoard}
+                disabled={isAddingTask}
+                className={cn(
+                  'flex items-center gap-1.5 px-3.5 py-1.5 rounded-full',
+                  'text-sm font-medium',
+                  'text-foreground',
+                  'hover:bg-[var(--interactive-hover)] disabled:opacity-60 disabled:cursor-not-allowed',
+                  'transition-colors duration-150'
+                )}
+                title={t('chat.textSelection.title.addTeamTask')}
+                type="button"
+              >
+                {isAddingTask ? <Icon name="loader-4" className="h-4 w-4 animate-spin" /> : null}
+                <span className="whitespace-nowrap">{t('chat.textSelection.actions.addTeamTask')}</span>
               </button>
             </>
           ) : null}
