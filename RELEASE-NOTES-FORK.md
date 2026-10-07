@@ -1,12 +1,16 @@
-# OpenChamber Fork — Team Mode Release
+# OpenChamber fork `2.2.0-fork1` — team operations on top of upstream
 
-**Base:** upstream `openchamber/openchamber` @ `733fa61` (2026-10-07)
-**Fork tag:** `fork-team-mode-1`
+**Base:** upstream `openchamber/openchamber` @ `733fa61` (2026-10-07), which is
+upstream `2.2.0`. The fork adds a `fork1` prerelease marker to that version
+and never moves ahead of upstream on its own: the next rebase renumbers to
+`<new upstream>-fork1`.
+**Fork tag:** `v2.2.0-fork1`
 
 This release turns **Team Mode into a first-class surface** — everything a
-team is stays observable from the app — and ships one new product block on
-top: **Missions**, goal prompts filed into a paced queue of sessions and
-teams of their own. Plus three chat flow gifts.
+team is stays observable from the app — and ships three more product blocks
+on top: **Missions**, goal prompts filed into a paced queue of sessions and
+teams of their own; **Contacts**, saved assistant personas each keeping one
+continuing chat; and three chat flow gifts.
 
 ---
 
@@ -67,16 +71,38 @@ is — and walk away.
 - State survives restarts; every state move is an event frame the page
   refetches on.
 
+## Contacts — saved personas, one continuing chat each
+
+A **Contacts** page beside Goals. Save an assistant as a person: name,
+description, the prompt that defines it, optionally a model and an agent.
+Each contact keeps one chat and it stays one: open the contact and the same
+thread continues; if the thread was deleted, the contact starts a fresh one
+seeded with its persona. The persona rides as the first message, so the
+model answers as the saved role from the very first reply.
+
+- Five routes under `/api/openchamber/assistants`; the store lives beside
+  the team and mission files.
+- Every write broadcasts an `openchamber:assistant-*` frame; open pages
+  refetch on it.
+- Address-book cards with identity colors, inline create/edit form.
+
 ---
 
 ## Distribution
 
+Assets for this release: `OpenChamber-beta-2.2.0-fork1-mac-arm64.dmg` (and
+the zip) — macOS, Apple silicon. The app is ad-hoc signed and not
+notarized: on first launch macOS may refuse it, so right-click → Open once,
+or run `xattr -dr com.apple.quarantine "/Applications/OpenChamber Beta.app"`
+after dragging it to Applications.
+
 The beta flavor installs beside stock OpenChamber (own `productName`,
-appId and icon) — `chamber-beta` from the DMG below.
+appId and icon), so both can live on one machine.
 
 ## Conventions
 
 All user-facing strings translated in the 13 locales the app ships.
 Theme tokens only — no hardcoded palette. Server contracts documented in
-`packages/web/server/lib/team/DOCUMENTATION.md` and
-`packages/web/server/lib/missions/DOCUMENTATION.md`.
+`packages/web/server/lib/team/DOCUMENTATION.md`,
+`packages/web/server/lib/missions/DOCUMENTATION.md` and
+`packages/web/server/lib/assistants/DOCUMENTATION.md`.

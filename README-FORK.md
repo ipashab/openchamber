@@ -7,11 +7,14 @@ whole team's activity, and the user can staff and direct a running team
 without going through the lead for what is their own decision. Around
 that core, the fork answers three more needs the panel surfaced: a task
 card that reports on its pull request, a decision in the chat that lands
-on the board as a task, and **Missions** — goal prompts filed into a
-paced queue of sessions and teams of their own.
+on the board as a task, **Missions** — goal prompts filed into a paced
+queue of sessions and teams of their own, and **Contacts** — saved
+assistant personas each keeping one continuing chat.
 
-Fork base: upstream `6bdacd7` (2026-10-06). Everything after it is this
-fork's work; upstream merges cleanly underneath.
+Fork base: upstream `733fa61` (2026-10-07, upstream version `2.2.0`).
+Everything after it is this fork's work; upstream merges cleanly
+underneath. The fork keeps upstream's version and adds a prerelease
+marker: `2.2.0-fork1`.
 
 Owning docs that move with the code:
 
@@ -19,6 +22,8 @@ Owning docs that move with the code:
   state, events, tool surface, every route the app itself uses.
 - `packages/web/server/lib/missions/DOCUMENTATION.md` — the missions
   contract: statuses, the queue's pacing, every route.
+- `packages/web/server/lib/assistants/DOCUMENTATION.md` — the contacts
+  contract: persona shape, the one-chat rule, every route.
 - `packages/ui/src/sync/DOCUMENTATION.md` — the sync side of the panel.
 
 ## The features, in the order they landed
@@ -132,6 +137,18 @@ the rest queued in creation order, each turn observed and marked
 completed when it goes idle after busy; the watch ends after an hour no
 matter what, so no session wedges the queue. State survives restarts;
 the list hears every state move as an event frame and refetches.
+
+### Contacts: saved personas with one continuing chat — `2e95232c9`
+
+An **Assistants as contacts** page beside Goals. A contact is a person:
+name, description, the prompt that defines it, optionally a model and an
+agent. One contact means one chat — the same thread continues while it
+exists; when it was deleted, opening the contact starts a fresh session
+seeded with the persona as its first message, so the model answers as the
+saved role from the very first reply. CRUD over five routes under
+`/api/openchamber/assistants`, the store beside the team and mission
+files, every write an `openchamber:assistant-*` frame the open pages
+refetch on.
 
 ## Distribution
 

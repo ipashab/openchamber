@@ -8,7 +8,14 @@
 <a href="https://www.blacksmith.sh/"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/references/badges/blacksmith-dark.svg"><img src="docs/references/badges/blacksmith-light.svg" height="28" alt="CI powered by Blacksmith" /></picture></a>
 
 > [!NOTE]
-> **This fork adds Team Mode** — run a team of coding agents (a lead you chat with, teammates with their own roles) with a shared task board, live roster, pull-request badges and a team activity feed, all observable from one panel. Plus **Missions**: goal prompts filed into a paced queue. The full list, commit by commit: [README-FORK.md](README-FORK.md).
+> **This is the team-operations fork of OpenChamber.** It builds four blocks on top of upstream, each with its own surface:
+>
+> - **Team Mode.** A lead you chat with plus staffed teammates: shared task board with pull-request badges, live roster, sub-teams, one activity feed.
+> - **Missions.** A Goals page where a goal prompt is filed into a paced queue and run as a fresh session or a lead-led team, watched to completion.
+> - **Contacts.** Saved assistant personas (a reviewer, a planner) with one continuing chat each, one click away in the sidebar.
+> - **`/compactnew`.** Compact a long chat and continue in a fresh one seeded with the summary.
+>
+> Fork release: `2.2.0-fork1`, based on upstream `2.2.0`. The full list, commit by commit: [README-FORK.md](README-FORK.md).
 
 ## Run agent work. Keep control. Ship from anywhere.
 
@@ -97,6 +104,20 @@ the working session right from the list.
 [Details](README-FORK.md#missions-goals-filed-into-a-paced-queue--7695098)
 
 <img src="docs/references/fork/missions-form.jpg" width="60%" alt="New mission form: title, goal, single-session or team mode, project" />
+
+## Contacts — assistants you keep like people
+
+A **Contacts** page beside Goals: save an assistant as a persona — a name,
+what it does, the prompt that defines it, optionally a model and an agent.
+Each contact keeps one chat and it stays one: open the contact and the same
+thread continues; if the thread was deleted, the contact starts a fresh one
+seeded with its persona, so it answers as the saved role from the first
+reply. [Details](README-FORK.md#contacts-saved-personas-with-one-continuing-chat--2e95232c9)
+
+<p>
+<img src="docs/references/fork/contacts.jpg" width="45%" alt="Contacts page: saved assistant cards with identity colors">
+<img src="docs/references/fork/contacts-form.jpg" width="45%" alt="New contact form: name, description, prompt, model and agent">
+</p>
 
 ## /compactnew — long chat, fresh start
 
