@@ -962,6 +962,7 @@ export const Header: React.FC = () => {
   const guestPage = useGuestsStore((state) => state.guests.find((guest) => guest.id === openGuestPageId));
   const isScheduledSurfaceOpen = useUIStore((state) => state.isScheduledTasksDialogOpen);
   const isMissionsSurfaceOpen = useUIStore((state) => state.isMissionsDialogOpen);
+  const isAssistantsSurfaceOpen = useUIStore((state) => state.isAssistantsDialogOpen);
   const isArchiveSurfaceOpen = useUIStore((state) => state.isArchivePageOpen);
   const isUsageStatsSurfaceOpen = useUIStore((state) => state.isUsageStatsPageOpen);
   const isSourceBoardSurfaceOpen = useUIStore((state) => state.isSourceBoardOpen);
@@ -982,6 +983,9 @@ export const Header: React.FC = () => {
     }
     if (isMissionsSurfaceOpen) {
       return { title: t('sessions.missions.title'), subtitle: null };
+    }
+    if (isAssistantsSurfaceOpen) {
+      return { title: t('sessions.assistants.title'), subtitle: null };
     }
     if (isArchiveSurfaceOpen) {
       return { title: t('sessions.archivePage.title'), subtitle: null };

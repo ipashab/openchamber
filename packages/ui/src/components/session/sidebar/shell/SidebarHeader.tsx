@@ -29,6 +29,7 @@ type Props = {
   handleOpenDirectoryDialog: () => void;
   onOpenScheduled: () => void;
   onOpenMissions: () => void;
+  onOpenAssistants: () => void;
   onOpenArchive: () => void;
   /** The issues and pull requests board; absent where it is not offered. */
   onOpenSourceBoard?: () => void;
@@ -55,6 +56,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
     handleOpenDirectoryDialog,
     onOpenScheduled,
     onOpenMissions,
+    onOpenAssistants,
     onOpenArchive,
     onOpenSourceBoard,
     headerActionIconClass,
@@ -182,6 +184,20 @@ export function SidebarHeader(props: Props): React.ReactNode {
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.missions')}</p></TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onOpenAssistants}
+                  className={cn(headerActionButtonClass, 'text-muted-foreground hover:text-foreground hover:bg-transparent')}
+                  aria-label={t('sessions.sidebar.header.actions.assistants')}
+                >
+                  <Icon name="robot-2" className={headerActionIconClass} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.assistants')}</p></TooltipContent>
             </Tooltip>
 
             <Tooltip>

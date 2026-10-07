@@ -87,6 +87,20 @@ type TeamChangedEvent = { type: 'team-changed'; teamId: string };
  */
 type MissionChangedEvent = { type: 'mission-changed'; missionId: string };
 
+/*
+ * Same sharing as the mission frames: every assistant frame means "the
+ * address book moved", and the page refetches, so the assistantId is a
+ * best-effort pointer rather than required payload.
+ */
+type AssistantChangedEvent = { type: 'assistant-changed'; assistantId: string };
+
+// The frame the server broadcasts for every address-book write. The id is a
+// best-effort pointer, so a frame without one fails the parse instead of
+// reaching listeners half-empty.
+const assistantChangedPropertiesSchema = z.object({
+  assistantId: z.string(),
+});
+
 /**
  * The extension chosen as browser provider can no longer serve (paused,
  * removed, or approval withdrawn), so the server put the in-app browser back.
@@ -179,7 +193,8 @@ type OpenChamberEvent =
   | BrowserProviderResetEvent
   | AgentMemoryChangedEvent
   | TeamChangedEvent
-  | MissionChangedEvent;
+  | MissionChangedEvent
+  | AssistantChangedEvent;
 type Listener = (event: OpenChamberEvent) => void;
 
 const worktreeChangedPropertiesSchema = z.object({
@@ -457,6 +472,17 @@ const dispatchFromEnvelope = (envelope: { type: string; properties: unknown }) =
     }
     for (const listener of listeners) {
       listener({ type: 'mission-changed', missionId });
+    }
+    return;
+  }
+
+  if (envelope.type.startsWith('openchamber:assistant-')) {
+    const parsed = assistantChangedPropertiesSchema.safeParse(envelope.properties);
+    if (!parsed.success) {
+      return;
+    }
+    for (const listener of listeners) {
+      listener({ type: 'assistant-changed', assistantId: parsed.data.assistantId });
     }
     return;
   }

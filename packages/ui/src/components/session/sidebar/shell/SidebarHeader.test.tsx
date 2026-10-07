@@ -13,6 +13,7 @@ const baseProps = {
   handleOpenDirectoryDialog: () => undefined,
   onOpenScheduled: () => undefined,
   onOpenMissions: () => undefined,
+  onOpenAssistants: () => undefined,
   onOpenMultiRun: () => undefined,
   canOpenMultiRun: true,
   onOpenArchive: () => undefined,

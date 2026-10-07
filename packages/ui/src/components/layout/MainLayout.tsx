@@ -18,6 +18,7 @@ import { SessionDialogs } from '@/components/session/SessionDialogs';
 import { ScheduledTasksDialog } from '@/components/session/ScheduledTasksDialog';
 import { SourceBoardView } from '@/components/sourceBoard/SourceBoardView';
 import { MissionsDialog } from '@/components/session/MissionsDialog';
+import { AssistantsDialog } from '@/components/session/AssistantsDialog';
 import { SpaceAccessDialog } from '@/components/session/spaces/SpaceAccessDialog';
 import { SpaceActionsSheet, SpaceDeleteDialog } from '@/components/session/spaces/SpaceActions';
 import { SpaceApplyDialog } from '@/components/session/spaces/SpaceApplyDialog';
@@ -66,6 +67,7 @@ export const MainLayout: React.FC = () => {
     const isRunOverviewOpen = useUIStore((state) => state.runOverviewKey !== null);
     const isScheduledTasksPageOpen = useUIStore((state) => state.isScheduledTasksDialogOpen);
     const isMissionsPageOpen = useUIStore((state) => state.isMissionsDialogOpen);
+    const isAssistantsPageOpen = useUIStore((state) => state.isAssistantsDialogOpen);
     const isArchivePageOpen = useUIStore((state) => state.isArchivePageOpen);
     const isUsageStatsPageOpen = useUIStore((state) => state.isUsageStatsPageOpen);
     const isSourceBoardOpen = useUIStore((state) => state.isSourceBoardOpen);
@@ -82,7 +84,7 @@ export const MainLayout: React.FC = () => {
     // Any full-page surface replacing the chat area. While open, the chat is
     // fully hidden (not just covered) so none of its floating chrome bleeds
     // through, and selecting a session or draft anywhere closes the surface.
-    const isSurfacePageOpen = isScheduledTasksPageOpen || isMissionsPageOpen || isArchivePageOpen || isUsageStatsPageOpen || isSourceBoardOpen || Boolean(worktreesPageProjectId) || isSpacesPageOpen || isRunOverviewOpen || Boolean(guestPage);
+    const isSurfacePageOpen = isScheduledTasksPageOpen || isMissionsPageOpen || isAssistantsPageOpen || isArchivePageOpen || isUsageStatsPageOpen || isSourceBoardOpen || Boolean(worktreesPageProjectId) || isSpacesPageOpen || isRunOverviewOpen || Boolean(guestPage);
 
     React.useEffect(() => {
         const closeSurfacePages = () => useUIStore.getState().closeMainSurfaces();
@@ -152,6 +154,7 @@ export const MainLayout: React.FC = () => {
                                             <ErrorBoundary><RunOverview /></ErrorBoundary>
                                             <ErrorBoundary><ScheduledTasksDialog /></ErrorBoundary>
                                             <ErrorBoundary><MissionsDialog /></ErrorBoundary>
+                                            <ErrorBoundary><AssistantsDialog /></ErrorBoundary>
                                             <ErrorBoundary><ArchiveView /></ErrorBoundary>
                                             {isUsageStatsPageOpen && (
                                                 <div className="absolute inset-0 z-10 bg-background">

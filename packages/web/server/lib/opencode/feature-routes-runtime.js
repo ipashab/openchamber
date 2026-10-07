@@ -34,6 +34,7 @@ import { registerOpenChamberSessionRoutes } from '../openchamber-sessions/routes
 import { registerTeamRoutes } from '../team/routes.js';
 import { createTeamPullStatus } from '../team/pull-status.js';
 import { registerMissionsRoutes } from '../missions/routes.js';
+import { registerAssistantsRoutes } from '../assistants/routes.js';
 import { registerOpenChamberControlRoutes } from '../openchamber-control/routes.js';
 import { registerMarkdownImageGrantRoutes } from '../markdown-image-grants/routes.js';
 import { registerSkillRoutes } from './skill-routes.js';
@@ -230,6 +231,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       openChamberSessionService,
       openChamberControlService,
       missionsService,
+      assistantsService,
       waitForOpenCodeReady,
       getOpenChamberEventClients,
       writeSseEvent,
@@ -322,6 +324,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     });
 
     registerMissionsRoutes(app, { missionsService });
+    registerAssistantsRoutes(app, { assistantsService });
 
     registerMarkdownImageGrantRoutes(app, {
       fsPromises,
