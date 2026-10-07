@@ -11,6 +11,7 @@ const makeApp = () => {
     routes,
     get: record('GET'),
     post: record('POST'),
+    put: record('PUT'),
     delete: record('DELETE'),
   };
 };
@@ -210,6 +211,71 @@ describe('team routes', () => {
       .handler({ params: { teamId: 'team_1' }, body: {} }, res);
     expect(res.statusCode).toBe(400);
     expect(res.body.error).toContain('subject is required');
+  });
+
+  it('serves pull summaries keyed by task id on the summaries route', async () => {
+    const app = makeApp();
+    const service = makeService();
+    service.overview = vi.fn(async () => ([{
+      id: 'team_1',
+      tasks: [{ taskId: 'task_1', pull: { owner: 'octo', repo: 'repo', number: 7, url: 'https://github.com/octo/repo/pull/7' } }],
+    }]));
+    const teamPullStatuses = { read: vi.fn(async (tasks) => {
+      expect(tasks[0].taskId).toBe('task_1');
+      return { status: 'ok', summaries: { task_1: { number: 7, state: 'open' } } };
+    }) };
+    registerTeamRoutes(app, { teamService: service, teamPresets: makePresets(), teamPullStatuses });
+
+    const res = makeRes();
+    await findRoute(app, 'GET', '/api/openchamber/teams/:teamId/pull-summaries')
+      .handler({ params: { teamId: 'team_1' } }, res);
+    expect(res.statusCode).toBeNull();
+    expect(res.body.status).toBe('ok');
+    expect(res.body.summaries.task_1.state).toBe('open');
+  });
+
+  it('answers 404 and 501 on the summaries route for an unknown team and a runtime without the reader', async () => {
+    const app = makeApp();
+    const service = makeService();
+    service.overview = vi.fn(async () => ([]));
+    registerTeamRoutes(app, { teamService: service, teamPresets: makePresets() });
+
+    const missing = makeRes();
+    await findRoute(app, 'GET', '/api/openchamber/teams/:teamId/pull-summaries')
+      .handler({ params: { teamId: 'team_none' } }, missing);
+    expect(missing.statusCode).toBe(404);
+
+    const noReader = makeRes();
+    service.overview = vi.fn(async () => ([{ id: 'team_1', tasks: [] }]));
+    registerTeamRoutes(app, { teamService: service, teamPresets: makePresets(), teamPullStatuses: undefined });
+    await findRoute(app, 'GET', '/api/openchamber/teams/:teamId/pull-summaries')
+      .handler({ params: { teamId: 'team_1' } }, noReader);
+    expect(noReader.statusCode).toBe(501);
+  });
+
+  it('links and unlinks a task pull request through the details dialog route', async () => {
+    const app = makeApp();
+    const service = makeService();
+    service.setTaskPullFromUi = vi.fn(async ({ teamId, taskId, prUrl }) => {
+      expect(teamId).toBe('team_1');
+      expect(taskId).toBe('task_7');
+      return { task: { taskId, pull: prUrl ? { owner: 'octo', repo: 'repo', number: 1, url: prUrl } : null } };
+    });
+    registerTeamRoutes(app, { teamService: service, teamPresets: makePresets() });
+
+    const link = makeRes();
+    await findRoute(app, 'PUT', '/api/openchamber/teams/:teamId/tasks/:taskId/pr')
+      .handler({ params: { teamId: 'team_1', taskId: 'task_7' }, body: { prUrl: 'https://github.com/octo/repo/pull/1' } }, link);
+    expect(link.statusCode).toBeNull();
+    expect(link.body.task.pull.number).toBe(1);
+
+    const malformed = new Error('prUrl must be a GitHub pull-request URL');
+    malformed.statusCode = 400;
+    service.setTaskPullFromUi = vi.fn(async () => { throw malformed; });
+    const reject = makeRes();
+    await findRoute(app, 'PUT', '/api/openchamber/teams/:teamId/tasks/:taskId/pr')
+      .handler({ params: { teamId: 'team_1', taskId: 'task_7' }, body: { prUrl: 'nope' } }, reject);
+    expect(reject.statusCode).toBe(400);
   });
 
   it('forwards TeamError status codes from member mutations and shutdown requests', async () => {

@@ -62,6 +62,37 @@ const asNonEmptyString = (value) => {
 
 const asList = (value) => (Array.isArray(value) ? value : []);
 
+/**
+ * A GitHub pull-request URL is the one PR address every producer of a PR can
+ * paste — the agent that opened it, the user that filed the task. The service
+ * stores the parsed coordinates, not the string, so the summaries route never
+ * re-parses; the canonical URL is rebuilt from the parts.
+ */
+const GITHUB_PULL_URL_PATTERN = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)\/?$/;
+
+const parsePullUrl = (value) => {
+  const raw = asNonEmptyString(value);
+  if (!raw) return null;
+  const match = GITHUB_PULL_URL_PATTERN.exec(raw);
+  if (!match) return null;
+  const [, owner, repo, number] = match;
+  const parsed = Number.parseInt(number, 10);
+  return { owner, repo, number: parsed, url: `https://github.com/${owner}/${repo}/pull/${parsed}` };
+};
+
+/**
+ * The same parse for task writes, with the distinction the tool contract
+ * needs: an empty string means "clear the pull request", a malformed string
+ * is a client bug. Returns `undefined` when the field was simply absent.
+ */
+const parseTaskPullInput = (value) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const parsed = parsePullUrl(value);
+  if (!parsed) throw new TeamError('prUrl must be a GitHub pull-request URL: https://github.com/<owner>/<repo>/pull/<number>', 400);
+  return parsed;
+};
+
 export class TeamError extends Error {
   constructor(message, statusCode = 500, details = null) {
     super(message);
@@ -146,6 +177,7 @@ const serializeTeam = (team) => ({
     status: task.status,
     owner: task.owner ?? null,
     blockedBy: asList(task.blockedBy),
+    pull: task.pull ?? null,
     createdBy: task.createdBy ?? null,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
@@ -1285,6 +1317,7 @@ export const createTeamService = (dependencies) => {
       status: 'pending',
       owner: owner || null,
       blockedBy: [],
+      pull: parseTaskPullInput(input?.prUrl) ?? null,
       createdBy: 'user',
       createdAt: now(),
       updatedAt: now(),
@@ -1314,11 +1347,33 @@ export const createTeamService = (dependencies) => {
         status: task.status,
         owner: task.owner,
         blockedBy: task.blockedBy,
+        pull: task.pull,
         createdBy: task.createdBy,
         createdAt: task.createdAt,
         updatedAt: task.updatedAt,
       },
     };
+  };
+
+  /**
+   * The details dialog's PR row: the user links a task to its pull request
+   * or clears the link. An empty string clears; a malformed URL is the
+   * dialog's own bug to surface. No wake rides this write — it says where
+   * the work is reviewable, not what the work is.
+   */
+  const setTaskPullFromUi = async ({ teamId, taskId, prUrl }) => {
+    await load();
+    const team = getTeam(asNonEmptyString(teamId));
+    if (!team) throw new TeamError(`No team with id '${teamId}'`, 404);
+    const task = team.tasks.find((candidate) => candidate.taskId === asNonEmptyString(taskId) && candidate.status !== 'deleted');
+    if (!task) throw new TeamError(`No task '${taskId}' on the board`, 404);
+    const pull = parseTaskPullInput(prUrl);
+    if (pull === undefined) throw new TeamError('prUrl is required: pass a GitHub pull-request URL or an empty string to clear', 400);
+    task.pull = pull;
+    task.updatedAt = now();
+    schedulePersist();
+    broadcast('openchamber:team-task', { teamId: team.id, change: 'updated', taskId: task.taskId });
+    return { task: { taskId: task.taskId, pull: task.pull } };
   };
 
   /** The "Edit team" dismissal: the lead handshake, requested by the user. */
@@ -1344,6 +1399,7 @@ export const createTeamService = (dependencies) => {
       throw new TeamError('Tasks belong to teammates; the lead coordinates the board', 400);
     }
     if (owner) requireSlot(team, owner);
+    const pull = parseTaskPullInput(input.prUrl) ?? null;
     const blockedBy = asList(input.blockedBy).map(String).filter(Boolean);
     for (const taskId of blockedBy) {
       if (!team.tasks.some((task) => task.taskId === taskId)) {
@@ -1357,6 +1413,7 @@ export const createTeamService = (dependencies) => {
       status: 'pending',
       owner: owner || null,
       blockedBy,
+      pull,
       createdBy: member.slotId,
       createdAt: now(),
       updatedAt: now(),
@@ -1380,7 +1437,7 @@ export const createTeamService = (dependencies) => {
       await wakeMember(team, record).catch(() => {});
     }
     return {
-      task: { taskId: task.taskId, subject: task.subject, status: task.status, owner: task.owner, blockedBy: task.blockedBy },
+      task: { taskId: task.taskId, subject: task.subject, status: task.status, owner: task.owner, blockedBy: task.blockedBy, pull: task.pull ?? null },
       note: owner
         ? 'The owner was notified and woken with this task. Do not send a separate message just to hand it off.'
         : 'The task is on the board with no owner; assign it with team.task_update (owner) when you decide.',
@@ -1404,6 +1461,8 @@ export const createTeamService = (dependencies) => {
     if (description) task.description = description;
     if (owner) task.owner = owner;
     if (status) task.status = status;
+    const pull = parseTaskPullInput(input.prUrl);
+    if (pull !== undefined) task.pull = pull;
     task.updatedAt = now();
     // A teammate finishing its own task is a deliverable even when it forgets
     // the report message: the member's turn end notifies the lead either way.
@@ -1428,7 +1487,7 @@ export const createTeamService = (dependencies) => {
       });
       await wakeMember(team, record).catch(() => {});
     }
-    return { task: { taskId: task.taskId, subject: task.subject, status: task.status, owner: task.owner } };
+    return { task: { taskId: task.taskId, subject: task.subject, status: task.status, owner: task.owner, pull: task.pull ?? null } };
   };
 
   const actionTaskList = async (input, membership) => {
@@ -1447,6 +1506,7 @@ export const createTeamService = (dependencies) => {
         status: task.status,
         owner: task.owner,
         blockedBy: task.blockedBy,
+        pull: task.pull ?? null,
       })),
     };
   };
@@ -1691,6 +1751,8 @@ export const createTeamService = (dependencies) => {
     addMemberFromUi,
     /** The board's quick-add: a task the user puts on from the panel. */
     createTaskFromUi,
+    /** The details dialog's PR row: link or unlink a task's pull request. */
+    setTaskPullFromUi,
     shutdownMemberFromUi,
     exportPresetFromUi,
     /** The activity feed route: the retained streams, merged and paged. */
@@ -1746,6 +1808,8 @@ export const createTeamService = (dependencies) => {
               status: task.status,
               owner: task.owner,
               blockedBy: asList(task.blockedBy),
+              // The PR ref the summaries route reads; nullish on older state.
+              pull: task.pull ?? null,
               createdBy: task.createdBy ?? null,
               createdAt: task.createdAt,
               updatedAt: task.updatedAt,

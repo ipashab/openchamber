@@ -16,7 +16,7 @@ import express from 'express';
 const jsonBody = express.json({ limit: '1mb' });
 
 export const registerTeamRoutes = (app, dependencies) => {
-  const { teamService, teamPresets } = dependencies;
+  const { teamService, teamPresets, teamPullStatuses } = dependencies;
   if (!teamService) throw new Error('team routes need a team service');
 
   // One payload for every team the server knows; the panel belongs to a
@@ -87,6 +87,42 @@ export const registerTeamRoutes = (app, dependencies) => {
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
       if (status >= 500) console.error('[team] task creation failed:', error?.message ?? error);
       return res.status(status).json({ error: error?.message ?? 'Failed to create task' });
+    }
+  });
+
+  // The board's PR chips: live GitHub state for every task carrying a pull
+  // link, keyed by task id. Read-only decoration of data the overview route
+  // already serves; disconnection and rate limits surface as a status, not a
+  // route failure, so the board keeps rendering when GitHub is unreachable.
+  app.get('/api/openchamber/teams/:teamId/pull-summaries', async (req, res) => {
+    try {
+      const teams = await teamService.overview();
+      const team = teams.find((entry) => entry.id === req.params?.teamId);
+      if (!team) return res.status(404).json({ error: 'No team with this id' });
+      if (!teamPullStatuses) return res.status(501).json({ error: 'Pull summaries are not available in this runtime' });
+      const result = await teamPullStatuses.read(team.tasks);
+      return res.json(result);
+    } catch (error) {
+      console.error('[team] pull summaries failed:', error?.message ?? error);
+      return res.status(502).json({ error: 'Failed to read pull summaries' });
+    }
+  });
+
+  // The details dialog's PR row: link a task to its pull request, or clear
+  // the link with an empty string. The user's own write, same shape the
+  // agents' team.task_update prUrl parameter accepts.
+  app.put('/api/openchamber/teams/:teamId/tasks/:taskId/pr', jsonBody, async (req, res) => {
+    try {
+      const result = await teamService.setTaskPullFromUi({
+        teamId: req.params?.teamId,
+        taskId: req.params?.taskId,
+        prUrl: req.body?.prUrl,
+      });
+      return res.json(result);
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+      if (status >= 500) console.error('[team] task PR update failed:', error?.message ?? error);
+      return res.status(status).json({ error: error?.message ?? 'Failed to update the task pull request' });
     }
   });
 

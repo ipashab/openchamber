@@ -57,6 +57,14 @@ const teamTaskSchema = z.object({
   // A slotId, not a display name; the board joins it to the roster client-side.
   owner: z.string().nullable(),
   blockedBy: z.array(z.string()),
+  // The PR the task's work is reviewable in; nullish on servers and state
+  // that predate the link. Parsed coordinates, not the pasted string.
+  pull: z.object({
+    owner: z.string(),
+    repo: z.string(),
+    number: z.number().int(),
+    url: z.string(),
+  }).nullish(),
   // Same nullish tolerance as `description`.
   createdBy: z.string().nullish(),
   createdAt: z.number(),
@@ -118,6 +126,41 @@ export type TeamMessage = z.infer<typeof teamMessageSchema>;
 export type TeamBoard = z.infer<typeof teamBoardSchema>;
 export type TeamActivityEvent = z.infer<typeof teamActivityEventSchema>;
 export type TeamActivityPage = z.infer<typeof teamActivityPageSchema>;
+
+// The live state of one task's pull request, as the server's summary layer
+// reads it. `checks.state` names the whole rollup; counts break it down.
+const teamPullSummarySchema = z.object({
+  owner: z.string(),
+  repo: z.string(),
+  number: z.number().int(),
+  state: z.enum(['open', 'closed', 'merged']),
+  draft: z.boolean(),
+  title: z.string(),
+  // The server answers GitHub's mergeable flag directly: true, false or
+  // unknown while GitHub computes it.
+  mergeable: z.boolean().nullable(),
+  // GitHub's own merge state word (clean, dirty, blocked…), lowercased.
+  mergeableState: z.string().nullish(),
+  checks: z.object({
+    state: z.enum(['success', 'failure', 'pending', 'unknown']),
+    total: z.number().int(),
+  }).nullish(),
+});
+export type TeamPullSummary = z.infer<typeof teamPullSummarySchema>;
+
+// The summaries route's envelope: 'ok' carries the per-task map — a task
+// whose PR could not be resolved maps to null, meaning unknown — while
+// 'disconnected' and 'unavailable' carry no map, and the panel shows the
+// link without live state instead of failing the board it decorates.
+const teamPullSummariesSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('ok'),
+    summaries: z.record(z.string(), teamPullSummarySchema.nullable()),
+  }),
+  z.object({ status: z.literal('disconnected') }),
+  z.object({ status: z.literal('unavailable') }),
+]);
+type TeamPullSummaries = z.infer<typeof teamPullSummariesSchema>;
 
 type FetchTeamBoards = (fetchImpl?: typeof runtimeFetch) => Promise<TeamBoard[]>;
 
@@ -196,5 +239,51 @@ export const createTeamTask = async (
   const parsed = z.object({ task: teamTaskSchema }).safeParse(body);
   if (!parsed.success) {
     throw new Error('Team task creation response did not match the expected shape');
+  }
+};
+
+/**
+ * The live GitHub state of every task carrying a PR link. Disconnected and
+ * rate-limited answers are valid outcomes, not failures: the board renders
+ * the link without live state rather than dropping its chips.
+ */
+export const fetchTeamPullSummaries = async (
+  teamId: string,
+  fetchImpl: typeof runtimeFetch = runtimeFetch,
+): Promise<TeamPullSummaries> => {
+  const response = await fetchImpl(`${TEAM_BOARD_ROUTE}/${encodeURIComponent(teamId)}/pull-summaries`, {
+    headers: { accept: 'application/json' },
+  });
+  if (!response.ok) {
+    throw new Error(`Team pull summaries request failed: ${response.status}`);
+  }
+  const body = await response.json().catch(() => null);
+  const parsed = teamPullSummariesSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new Error('Team pull summaries response did not match the expected shape');
+  }
+  return parsed.data;
+};
+
+/**
+ * Link a task to its pull request, or clear the link with an empty string.
+ * The board refetches through the creation broadcast this write carries, so
+ * the caller needs the failure, not the result.
+ */
+export const setTeamTaskPull = async (
+  teamId: string,
+  taskId: string,
+  prUrl: string,
+  fetchImpl: typeof runtimeFetch = runtimeFetch,
+): Promise<void> => {
+  const response = await fetchImpl(`${TEAM_BOARD_ROUTE}/${encodeURIComponent(teamId)}/tasks/${encodeURIComponent(taskId)}/pr`, {
+    method: 'PUT',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify({ prUrl }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    const parsedError = z.object({ error: z.string() }).safeParse(body);
+    throw new Error(parsedError.success && parsedError.data.error.trim() ? parsedError.data.error : `Team task PR update failed: ${response.status}`);
   }
 };

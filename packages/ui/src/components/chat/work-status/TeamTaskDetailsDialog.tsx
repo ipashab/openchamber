@@ -3,6 +3,8 @@ import React from 'react';
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
 import { useI18n } from '@/lib/i18n';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -10,9 +12,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { openExternalUrl } from '@/lib/url';
 import { formatDateTimeForPreference } from '@/lib/timeFormat';
 import { useUIStore } from '@/stores/useUIStore';
-import type { TeamTask, TeamTaskStatus } from '@/lib/team/team-board-api';
+import { setTeamTaskPull, type TeamPullSummary, type TeamTask, type TeamTaskStatus } from '@/lib/team/team-board-api';
+import { TeamPullStateChip } from './TeamPullStateChip';
 
 type TaskVisual = { icon: IconName; color?: string };
 
@@ -31,23 +35,78 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   /** Задача живыми данными доски: родитель пересчитывает её на каждый рендер, поэтому статус в диалоге обновляется без переоткрытия. */
   task: TeamTask;
+  /** Команда задачи — адрес для записи ссылки на PR. */
+  teamId: string;
   /** slotId → отображаемое имя участника; чужие слоты выходят как есть. */
   nameOf: (slotId: string) => string;
   /** slotId → identity-цвет участника; отсутствует — имя без подкраски. */
   colorOf?: (slotId: string) => string | undefined;
   /** taskId → тема задачи; для зависимостей, которых уже нет на доске, — сам id. */
   subjectOf: (taskId: string) => string;
+  /** Живое состояние PR задачи; null — не разрешён (неизвестен) или отключён. */
+  pullSummary: TeamPullSummary | null;
+  /** false до первого ответа сервера состояний; затем его слово статуса. */
+  pullLive: 'ok' | 'disconnected' | 'unavailable' | false;
 };
 
 /**
- * Полный текст задачи по клику на её карточку: бриф лида (тот самый текст,
- * которым будят исполнителя), статус, владелец, зависимости и даты. Доска
- * остаётся местом обзора — три строки на карточку; детали живут здесь.
+ * The task's full text behind a card click: the lead's brief (the same text
+ * the owner was woken with), status, owner, dependencies and dates. The board
+ * stays the overview surface — three lines per card; details live here.
+ *
+ * The pull-request row links the task to its reviewable work: live GitHub
+ * state beside the link, and an inline edit to set or clear it. Saves go
+ * through the same shape the agents' `team.task_update` prUrl parameter
+ * accepts, so the user and the lead share one contract.
  */
-export const TeamTaskDetailsDialog: React.FC<Props> = ({ open, onOpenChange, task, nameOf, colorOf, subjectOf }) => {
+export const TeamTaskDetailsDialog: React.FC<Props> = ({
+  open,
+  onOpenChange,
+  task,
+  teamId,
+  nameOf,
+  colorOf,
+  subjectOf,
+  pullSummary,
+  pullLive,
+}) => {
   const { t } = useI18n();
   const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
   const visual = TASK_VISUALS[task.status];
+  const [pullEditing, setPullEditing] = React.useState(false);
+  const [pullDraft, setPullDraft] = React.useState('');
+  const [pullSaving, setPullSaving] = React.useState(false);
+  const [pullFailed, setPullFailed] = React.useState(false);
+
+  // Fresh edit state for every open, and for every switch to another task
+  // while the dialog stays open.
+  React.useEffect(() => {
+    if (open) {
+      setPullEditing(false);
+      setPullDraft('');
+      setPullSaving(false);
+      setPullFailed(false);
+    }
+  }, [open, task.taskId]);
+
+  const savePull = async () => {
+    if (pullSaving) return;
+    setPullSaving(true);
+    setPullFailed(false);
+    try {
+      await setTeamTaskPull(teamId, task.taskId, pullDraft.trim());
+      // The board refetches through the broadcast this write carries; the
+      // dialog reads the live task, so the row settles on its own.
+      setPullEditing(false);
+    } catch {
+      setPullFailed(true);
+    } finally {
+      setPullSaving(false);
+    }
+  };
+
+  const pull = task.pull;
+
 
   const formatStamp = (timestamp: number): string =>
     formatDateTimeForPreference(timestamp, timeFormatPreference, {
@@ -110,6 +169,80 @@ export const TeamTaskDetailsDialog: React.FC<Props> = ({ open, onOpenChange, tas
             {task.updatedAt !== task.createdAt
               ? metaRow(t('chat.workStatus.teamBoard.taskDetails.updatedAt'), formatStamp(task.updatedAt), 'updatedAt')
               : null}
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex min-w-0 items-baseline gap-2 text-[13px]">
+              <span className="w-28 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t('chat.workStatus.teamBoard.taskDetails.pullRequest')}
+              </span>
+              <span className="flex min-w-0 flex-1 items-center flex-wrap gap-1.5">
+                {pull && !pullEditing ? (
+                  <>
+                    <TeamPullStateChip pull={pull} summary={pullSummary} live={pullLive} />
+                    <button
+                      type="button"
+                      className="shrink-0 text-[11px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                      onClick={() => void openExternalUrl(pull.url)}
+                    >
+                      {t('chat.workStatus.teamBoard.taskDetails.openPull')}
+                    </button>
+                  </>
+                ) : !pullEditing ? (
+                  <span className="text-[13px] text-muted-foreground">{t('chat.workStatus.teamBoard.taskDetails.noPull')}</span>
+                ) : null}
+                {!pullEditing ? (
+                  <button
+                    type="button"
+                    className="shrink-0 text-[11px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    onClick={() => { setPullDraft(pull?.url ?? ''); setPullFailed(false); setPullEditing(true); }}
+                  >
+                    {pull
+                      ? t('chat.workStatus.teamBoard.taskDetails.changePull')
+                      : t('chat.workStatus.teamBoard.taskDetails.addPull')}
+                  </button>
+                ) : null}
+              </span>
+            </div>
+            {pullEditing ? (
+              <div className="space-y-1.5 pl-28">
+                <Input
+                  value={pullDraft}
+                  onChange={(event) => setPullDraft(event.target.value)}
+                  placeholder="https://github.com/<owner>/<repo>/pull/<number>"
+                  aria-label={t('chat.workStatus.teamBoard.taskDetails.pullUrlLabel')}
+                  autoFocus
+                />
+                {pullFailed ? (
+                  <p role="alert" className="text-[13px]" style={{ color: 'var(--status-error)' }}>
+                    {t('chat.workStatus.teamBoard.taskDetails.pullSaveError')}
+                  </p>
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <Button type="button" size="sm" disabled={pullSaving} onClick={() => void savePull()}>
+                    {t('chat.workStatus.teamBoard.taskDetails.pullSave')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={pullSaving || !pull}
+                    onClick={() => { setPullDraft(''); void savePull(); }}
+                  >
+                    {t('chat.workStatus.teamBoard.taskDetails.pullClear')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={pullSaving}
+                    onClick={() => setPullEditing(false)}
+                  >
+                    {t('chat.workStatus.teamBoard.addTask.cancel')}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-1.5">
