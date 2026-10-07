@@ -135,6 +135,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   const setAboutDialogOpen = useUIStore((state) => state.setAboutDialogOpen);
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
   const setScheduledTasksDialogOpen = useUIStore((state) => state.setScheduledTasksDialogOpen);
+  const setMissionsDialogOpen = useUIStore((state) => state.setMissionsDialogOpen);
   const setArchivePageOpen = useUIStore((state) => state.setArchivePageOpen);
   const setUsageStatsPageOpen = useUIStore((state) => state.setUsageStatsPageOpen);
   const setWorktreesPageProjectId = useUIStore((state) => state.setWorktreesPageProjectId);
@@ -644,6 +645,10 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         onOpenScheduled={() => {
           if (mobileVariant) setSessionSwitcherOpen(false);
           setScheduledTasksDialogOpen(true);
+        }}
+        onOpenMissions={() => {
+          if (mobileVariant) setSessionSwitcherOpen(false);
+          setMissionsDialogOpen(true);
         }}
         onOpenArchive={() => {
           if (mobileVariant) setSessionSwitcherOpen(false);

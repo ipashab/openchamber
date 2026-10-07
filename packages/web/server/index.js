@@ -150,6 +150,7 @@ import { createManagedConfigRuntime } from './lib/opencode/managed-config-file.j
 import { createOpenChamberSessionService } from './lib/openchamber-sessions/routes.js';
 import { createOpenCodeClient as createSessionScopedOpenCodeClient } from './lib/openchamber-sessions/opencode-client.js';
 import { createTeamService } from './lib/team/service.js';
+import { createMissionsService } from './lib/missions/service.js';
 import { createTeamPresetStore } from './lib/team/presets.js';
 import { createSessionMetadataStore, createOpenCodeSessionMetadata } from './lib/openchamber-sessions/session-metadata-store.js';
 import { createOpenCodeClient } from './lib/openchamber-sessions/opencode-client.js';
@@ -1680,6 +1681,23 @@ void teamService.init().catch((error) =>
 // Presets for the "New Team" dialog: built-in recipes plus the user's own,
 // persisted next to teams.json.
 const teamPresets = createTeamPresetStore({ fsPromises, path, dataDir: OPENCHAMBER_DATA_DIR });
+// Missions: goal prompts filed into a paced queue, each in a session or team
+// of its own. Completion is observed through the shared session-state probe.
+const missionsService = createMissionsService({
+  fsPromises,
+  path,
+  dataDir: OPENCHAMBER_DATA_DIR,
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+  waitForOpenCodeReady,
+  createOpenCodeClient: createSessionScopedOpenCodeClient,
+  sessionService: openChamberSessionService,
+  teamService,
+  getSessionState: (sessionId) => sessionRuntime.getSessionState(sessionId),
+  broadcastUiEvent: broadcastOpenChamberUiEvent,
+});
+void missionsService.init().catch((error) =>
+  console.warn('[missions] could not initialize mission state:', error?.message ?? error));
 // Browser actions are published to whichever OpenChamber clients are connected;
 // the one owning the browser panel answers. `emitRequest` returns the number of
 // clients reached so the broker can fail fast when nobody is listening.
@@ -2449,6 +2467,7 @@ async function main(options = {}) {
     openchamberVersion: OPENCHAMBER_VERSION,
     teamService,
     teamPresets,
+    missionsService,
     onGuestDeactivated: async (event) => {
       guestSurfaceRuntime?.endForGuest(event.guestId);
       return browserControlRouter.handleGuestDeactivated(event);

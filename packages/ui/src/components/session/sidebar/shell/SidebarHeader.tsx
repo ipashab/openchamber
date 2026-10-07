@@ -28,6 +28,7 @@ type Props = {
   showRecentControls: boolean;
   handleOpenDirectoryDialog: () => void;
   onOpenScheduled: () => void;
+  onOpenMissions: () => void;
   onOpenArchive: () => void;
   /** The issues and pull requests board; absent where it is not offered. */
   onOpenSourceBoard?: () => void;
@@ -53,6 +54,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
     showRecentControls,
     handleOpenDirectoryDialog,
     onOpenScheduled,
+    onOpenMissions,
     onOpenArchive,
     onOpenSourceBoard,
     headerActionIconClass,
@@ -167,6 +169,20 @@ export function SidebarHeader(props: Props): React.ReactNode {
                 <TooltipContent side="bottom" sideOffset={4}><p>{t('sourceBoard.title')}</p></TooltipContent>
               </Tooltip>
             ) : null}
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onOpenMissions}
+                  className={cn(headerActionButtonClass, 'text-muted-foreground hover:text-foreground hover:bg-transparent')}
+                  aria-label={t('sessions.sidebar.header.actions.missions')}
+                >
+                  <Icon name="target" className={headerActionIconClass} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.missions')}</p></TooltipContent>
+            </Tooltip>
 
             <Tooltip>
               <TooltipTrigger asChild>
