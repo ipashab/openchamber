@@ -15,9 +15,10 @@ const makeApp = () => {
   };
 };
 
-const makeService = ({ overview = [], createFromUi } = {}) => ({
+const makeService = ({ overview = [], createFromUi, readActivity } = {}) => ({
   overview: vi.fn(async () => overview),
   ...(createFromUi ? { createFromUi: vi.fn(createFromUi) } : { createFromUi: vi.fn(async () => ({ team: {}, leadSessionId: 'ses_1', members: [] })) }),
+  ...(readActivity ? { readActivity: vi.fn(readActivity) } : { readActivity: vi.fn(async () => ({ teamId: 'team_1', events: [], nextCursor: null })) }),
 });
 
 const makePresets = (overrides = {}) => ({
@@ -244,5 +245,50 @@ describe('team routes', () => {
       .handler({ params: { teamId: 'team_missing' } }, res404);
     expect(res404.statusCode).toBe(404);
     expect(res404.body.error).toContain('No team with id');
+  });
+
+  it('serves a page of the activity feed on GET /api/openchamber/teams/:teamId/activity', async () => {
+    const app = makeApp();
+    const service = makeService();
+    service.readActivity = vi.fn(async ({ teamId, before, limit }) => {
+      expect(teamId).toBe('team_1');
+      expect(before).toBe('100:m_9');
+      expect(limit).toBe('25');
+      return { teamId, events: [{ kind: 'message', id: 'm_9', at: 100, from: 'lead', to: 'a', type: 'report', content: 'done', summary: null, read: true }], nextCursor: null };
+    });
+    registerTeamRoutes(app, { teamService: service, teamPresets: makePresets() });
+
+    const res = makeRes();
+    await findRoute(app, 'GET', '/api/openchamber/teams/:teamId/activity')
+      .handler({ params: { teamId: 'team_1' }, query: { before: '100:m_9', limit: '25' } }, res);
+    expect(res.statusCode).toBeNull();
+    expect(res.body.nextCursor).toBeNull();
+    expect(res.body.events).toHaveLength(1);
+    expect(res.body.events[0].kind).toBe('message');
+  });
+
+  it('omits the cursor and limit when the query is empty, and passes a TeamError status through', async () => {
+    const app = makeApp();
+    const service = makeService();
+    service.readActivity = vi.fn(async ({ before, limit }) => {
+      expect(before).toBeUndefined();
+      expect(limit).toBeUndefined();
+      return { teamId: 'team_1', events: [], nextCursor: null };
+    });
+    registerTeamRoutes(app, { teamService: service, teamPresets: makePresets() });
+
+    const res = makeRes();
+    await findRoute(app, 'GET', '/api/openchamber/teams/:teamId/activity')
+      .handler({ params: { teamId: 'team_1' } }, res);
+    expect(res.statusCode).toBeNull();
+    expect(res.body.events).toEqual([]);
+
+    const invalid = Object.assign(new Error('Invalid activity cursor'), { statusCode: 400 });
+    service.readActivity = vi.fn(async () => { throw invalid; });
+    const res400 = makeRes();
+    await findRoute(app, 'GET', '/api/openchamber/teams/:teamId/activity')
+      .handler({ params: { teamId: 'team_1' }, query: { before: 'not-a-cursor' } }, res400);
+    expect(res400.statusCode).toBe(400);
+    expect(res400.body.error).toBe('Invalid activity cursor');
   });
 });

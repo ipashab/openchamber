@@ -89,6 +89,25 @@ export const registerTeamRoutes = (app, dependencies) => {
     }
   });
 
+  // The team's activity feed: the mailbox and the task board merged into one
+  // newest-first stream, paged past a page with the opaque `before` cursor
+  // the previous page returned. Read-only like the overview; the feed pages
+  // through the team's retained state rather than storing history of its own.
+  app.get('/api/openchamber/teams/:teamId/activity', async (req, res) => {
+    try {
+      const result = await teamService.readActivity({
+        teamId: req.params?.teamId,
+        before: typeof req.query?.before === 'string' && req.query.before.length > 0 ? req.query.before : undefined,
+        limit: req.query?.limit,
+      });
+      return res.json(result);
+    } catch (error) {
+      const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+      if (status >= 500) console.error('[team] activity feed failed:', error?.message ?? error);
+      return res.status(status).json({ error: error?.message ?? 'Failed to read team activity' });
+    }
+  });
+
   // Presets are always wired in the server; a missing store is a wiring bug.
   if (!teamPresets) throw new Error('team routes need a team preset store');
 

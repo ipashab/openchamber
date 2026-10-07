@@ -136,6 +136,12 @@ The app's own team management rides the same routes:
 - `GET /api/openchamber/teams/:teamId/preset` — the roster of a live team as
   a preset recipe JSON, feeding the editor's "Save as preset" and
   "Download JSON" actions; the same payload `team.export_preset` returns.
+- `GET /api/openchamber/teams/:teamId/activity` — the team's activity feed:
+  the mailbox and the task board merged into one newest-first stream, paged
+  by an opaque `"<at>:<id>"` cursor the previous page's `nextCursor` returns
+  (`?before=`, `?limit=` capped at 100). The feed pages through exactly the
+  state the team retains — it stores no history of its own — and skips
+  deleted tasks, the same boundary the board shows.
 
 ## Test seams
 

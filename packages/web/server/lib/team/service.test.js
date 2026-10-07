@@ -371,6 +371,70 @@ describe('team service', () => {
   });
 });
 
+describe('readActivity', () => {
+  it('merges mailbox and task streams newest-first with a page cursor', async () => {
+    const { service } = await makeService();
+    const { teamId, roster } = await makeTeam(service);
+    // Distinct millisecond stamps keep the feed order (not the id tiebreak)
+    // under test — the tiebreak's own guarantee is stability, not sequence.
+    const tick = async () => new Promise((resolve) => setTimeout(resolve, 2));
+    await service.executeAction('team.task_create', { subject: 'First' }, 'ses_lead');
+    await tick();
+    await service.executeAction('team.send_message', { to: roster[0].slotId, message: 'warm hello' }, 'ses_lead');
+    await tick();
+    await service.executeAction('team.task_create', { subject: 'Second', owner: roster[0].slotId }, 'ses_lead');
+
+    const first = await service.readActivity({ teamId, limit: 2 });
+    expect(first.events).toHaveLength(2);
+    expect(first.nextCursor).not.toBeNull();
+    // Newest first: the second task, then one of the same-second events.
+    expect(first.events[0].kind).toBe('task');
+    expect(first.events[0].subject).toBe('Second');
+    // A same-second burst keeps a stable order through the id tiebreak, and
+    // the next page starts strictly below the cursor's (at, id) pair.
+    for (const event of first.events) {
+      expect(event.at <= Number(first.nextCursor.split(':')[0])).toBe(true);
+    }
+
+    const second = await service.readActivity({ teamId, before: first.nextCursor, limit: 2 });
+    expect(second.events.length).toBeGreaterThan(0);
+    const idsSeen = new Set([...first.events, ...second.events].map((event) => event.id));
+    expect(idsSeen.size).toBe(first.events.length + second.events.length);
+
+    // The remainder drains: a page ends the walk with a null cursor, not a
+    // page of echoes.
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it('returns full pages only while older retained events remain', async () => {
+    const { service } = await makeService();
+    const { teamId } = await makeTeam(service);
+    await service.executeAction('team.task_create', { subject: 'Only' }, 'ses_lead');
+
+    const page = await service.readActivity({ teamId, limit: 1 });
+    // Exactly one event remains: the page is full but nothing follows it.
+    expect(page.events).toHaveLength(1);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('rejects an unknown team, a malformed cursor and a bad limit', async () => {
+    const { service } = await makeService();
+    const { teamId } = await makeTeam(service);
+    await expect(service.readActivity({ teamId: 'team_missing' }))
+      .rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.readActivity({ teamId, before: 'nope' }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.readActivity({ teamId, before: '12:' }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.readActivity({ teamId, limit: 0 }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.readActivity({ teamId, limit: 'many' }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    // Omitted limit is the default page, and a missing cursor is page one.
+    await expect(service.readActivity({ teamId })).resolves.toMatchObject({ teamId });
+  });
+});
+
 describe('createFromUi', () => {
   it('creates the lead and member sessions, then briefs every member', async () => {
     const { service, sent, broadcasts, openCodeState } = await makeService();

@@ -32,6 +32,10 @@ const PERSIST_DEBOUNCE_MS = 250;
 const MAX_TEAMS = 50;
 const MAX_MAILBOX_PER_TEAM = 300;
 const MAX_TASKS_PER_TEAM = 500;
+// Feed page size: one screen of a busy team. Larger asks are clamped, not
+// honored — the feed route is read by a panel, not an exporter.
+const ACTIVITY_PAGE_DEFAULT = 50;
+const ACTIVITY_PAGE_MAX = 100;
 // Matches AionUi: an open turn beyond the provider's request window is
 // treated as a failed member rather than left hanging as "busy".
 const MEMBER_STALL_TIMEOUT_MS = 300_000;
@@ -67,6 +71,30 @@ export class TeamError extends Error {
 }
 
 const shortId = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+
+/**
+ * Feed cursor pagination needs two helpers. The cursor is the last event a
+ * page returned as `"<at>:<id>"`, parsed back to its parts; the id keeps any
+ * colons of its own because the split is on the first one only. Anything
+ * malformed is a client bug, not history to reinterpret: 400.
+ */
+const parseActivityCursor = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const raw = String(value);
+  const separator = raw.indexOf(':');
+  if (separator <= 0) throw new TeamError('Invalid activity cursor', 400);
+  const at = Number(raw.slice(0, separator));
+  const id = raw.slice(separator + 1);
+  if (!Number.isSafeInteger(at) || at < 0 || id.length === 0) throw new TeamError('Invalid activity cursor', 400);
+  return { at, id };
+};
+
+const parseActivityLimit = (value) => {
+  if (value === undefined || value === null || value === '') return ACTIVITY_PAGE_DEFAULT;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) throw new TeamError('Invalid activity limit', 400);
+  return Math.min(parsed, ACTIVITY_PAGE_MAX);
+};
 
 const isPrimaryAgentMode = (mode) => !mode || mode === 'primary' || mode === 'all';
 
@@ -1380,6 +1408,64 @@ export const createTeamService = (dependencies) => {
     return { preset: buildTeamPresetFromTeam(team) };
   };
 
+  /**
+   * The team's activity feed: the mailbox and the task board merged into one
+   * newest-first stream, paged by an opaque cursor. The feed adds no retained
+   * history of its own — it pages through exactly what the team still keeps,
+   * the same boundary the board shows. A task contributes one event, its
+   * latest state at `updatedAt`; a deleted task is history the board no
+   * longer acknowledges and is skipped. Same-timestamp events sort by id,
+   * and the cursor pages strictly down that order, so a burst sharing one
+   * timestamp still splits cleanly across pages.
+   */
+  const readActivity = async ({ teamId, before, limit }) => {
+    await load();
+    const team = getTeam(asNonEmptyString(teamId));
+    if (!team) throw new TeamError(`No team with id '${teamId}'`, 404);
+
+    const pageSize = parseActivityLimit(limit);
+    const cursor = parseActivityCursor(before);
+
+    const events = [];
+    for (const message of asList(team.mailbox)) {
+      events.push({
+        kind: 'message',
+        id: message.id,
+        at: message.createdAt,
+        from: message.from,
+        to: message.to,
+        type: message.type,
+        content: message.content,
+        summary: message.summary ?? null,
+        read: message.read === true,
+      });
+    }
+    for (const task of asList(team.tasks)) {
+      if (task.status === 'deleted') continue;
+      events.push({
+        kind: 'task',
+        id: task.taskId,
+        at: task.updatedAt,
+        taskId: task.taskId,
+        subject: task.subject,
+        status: task.status,
+        owner: task.owner ?? null,
+        createdAt: task.createdAt,
+      });
+    }
+    events.sort((left, right) =>
+      (right.at - left.at) ||
+      (left.id < right.id ? 1 : left.id > right.id ? -1 : 0));
+
+    const remaining = cursor
+      ? events.filter((event) => event.at < cursor.at || (event.at === cursor.at && event.id < cursor.id))
+      : events;
+    const page = remaining.slice(0, pageSize);
+    const last = page[page.length - 1];
+    const nextCursor = remaining.length > pageSize && last ? `${last.at}:${last.id}` : null;
+    return { teamId: team.id, events: page, nextCursor };
+  };
+
   const ACTION_HANDLERS = new Map([
     ['team.start', actionStart],
     ['team.members', actionMembers],
@@ -1542,6 +1628,8 @@ export const createTeamService = (dependencies) => {
     addMemberFromUi,
     shutdownMemberFromUi,
     exportPresetFromUi,
+    /** The activity feed route: the retained streams, merged and paged. */
+    readActivity,
     resolveTeamAction,
     /**
      * Test seam: the persisted state as the disk round-trip would render it,

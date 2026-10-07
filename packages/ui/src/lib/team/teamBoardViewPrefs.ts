@@ -5,11 +5,11 @@
 
 import { z } from 'zod';
 
-export type TeamBoardViewMode = 'board' | 'chats';
+export type TeamBoardViewMode = 'board' | 'chats' | 'activity';
 
 const DEFAULT_VIEW: TeamBoardViewMode = 'board';
 
-const storageSchema = z.record(z.string(), z.enum(['board', 'chats']));
+const storageSchema = z.record(z.string(), z.enum(['board', 'chats', 'activity']));
 
 const STORAGE_KEY = 'oc.teamBoard.view.v1';
 

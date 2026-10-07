@@ -43,9 +43,9 @@ describe('teamBoardViewPrefs', () => {
 
   test('keeps other teams’ choices when one team changes', () => {
     writeTeamBoardView('team-a', 'chats');
-    writeTeamBoardView('team-b', 'chats');
+    writeTeamBoardView('team-b', 'activity');
     writeTeamBoardView('team-a', 'board');
-    expect(readTeamBoardView('team-b')).toBe('chats');
+    expect(readTeamBoardView('team-b')).toBe('activity');
     expect(readTeamBoardView('team-a')).toBe('board');
   });
 
