@@ -3559,6 +3559,8 @@ export const dict: Record<I18nKey, string> = {
   'team.edit.stopShort': '停止',
   'team.edit.adding': '正在加入…',
   'team.edit.add': '加入團隊',
+  'team.edit.askLead': '請隊長來選人',
+  'team.edit.askLead.draft': '為以下需求新增合適的隊員：',
   'team.edit.preset.title': '團隊配方',
   'team.edit.preset.save': '儲存為預設',
   'team.edit.preset.download': '下載 JSON',

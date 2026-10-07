@@ -3548,6 +3548,8 @@ export const dict: Record<I18nKey, string> = {
   'team.edit.stopShort': 'Зупинити',
   'team.edit.adding': 'Додаю…',
   'team.edit.add': 'Додати до команди',
+  'team.edit.askLead': 'Попросіть лідера підібрати когось',
+  'team.edit.askLead.draft': 'Добери учасника команди для: ',
   'team.edit.preset.title': 'Рецепт команди',
   'team.edit.preset.save': 'Зберегти як пресет',
   'team.edit.preset.download': 'Завантажити JSON',

@@ -3558,6 +3558,8 @@ export const dict = {
   'team.edit.stopShort': 'Arrêter',
   'team.edit.adding': 'Ajout…',
   'team.edit.add': 'Ajouter à l\'équipe',
+  'team.edit.askLead': 'Demande au chef d\'équipe de choisir quelqu\'un',
+  'team.edit.askLead.draft': 'Ajoute un coéquipier adapté pour : ',
   'team.edit.preset.title': 'Recette d’équipe',
   'team.edit.preset.save': 'Enregistrer comme préréglage',
   'team.edit.preset.download': 'Télécharger le JSON',

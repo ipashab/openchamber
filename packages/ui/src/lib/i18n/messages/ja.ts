@@ -3559,6 +3559,8 @@ export const dict: Record<I18nKey, string> = {
   'team.edit.stopShort': '停止',
   'team.edit.adding': '追加中…',
   'team.edit.add': 'チームに追加',
+  'team.edit.askLead': 'リーダーに人選を依頼する',
+  'team.edit.askLead.draft': 'この用途に合うメンバーを追加して：',
   'team.edit.preset.title': 'チームのレシピ',
   'team.edit.preset.save': 'プリセットとして保存',
   'team.edit.preset.download': 'JSON をダウンロード',

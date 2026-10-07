@@ -29,6 +29,10 @@ mock.module('@/components/session/team/useTeamEditorOptions', () => ({
   }),
 }));
 
+mock.module('@/lib/team/teamAskLead', () => ({
+  askLeadToStaff: mock(() => undefined),
+}));
+
 const { TeamEditDialog } = await import('./TeamEditDialog');
 
 const board: TeamBoard = {
@@ -72,5 +76,7 @@ describe('TeamEditDialog recipe block', () => {
 
     expect(markup).toContain('Team Lead');
     expect(markup).toContain('Add to team');
+    // Подсказка-заместитель: состав умеет подбирать и сам лид.
+    expect(markup).toContain('Ask the Team Lead to pick someone');
   });
 });
