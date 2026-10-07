@@ -148,6 +148,7 @@ const LOCAL_ACTION_COMMANDS = new Set([
     'timeline',
     'handoff-review',
     'compact',
+    'compactnew',
     'fork',
 ]);
 

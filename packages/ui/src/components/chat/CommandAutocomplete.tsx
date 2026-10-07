@@ -36,7 +36,7 @@ export interface CommandInfo {
 // Every name the composer runs itself; an extension command with one of
 // these names is dropped before it reaches the list.
 const LOCAL_COMMAND_NAMES = [
-  'init', 'review', 'undo', 'redo', 'timeline', 'compact', 'fork', 'btw', 'summary', 'workspace-review', 'handoff-review',
+  'init', 'review', 'undo', 'redo', 'timeline', 'compact', 'compactnew', 'fork', 'btw', 'summary', 'workspace-review', 'handoff-review',
   'plan-feature', 'craft-goal', 'schedule-task', 'catch-up', 'debug', 'weigh', 'explore',
 ];
 
@@ -173,6 +173,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
                 { id: 'openchamber:redo', name: 'redo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.redoDescription'), isBuiltIn: true },
                 { id: 'openchamber:timeline', name: 'timeline', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.timelineDescription'), isBuiltIn: true },
                 { id: 'openchamber:compact', name: 'compact', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
+                { id: 'openchamber:compactnew', name: 'compactnew', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.compactnewDescription'), isBuiltIn: true },
               ]
             : []
           ),
@@ -266,6 +267,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
             : []
           ),
           { id: 'openchamber:compact', name: 'compact', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
+          { id: 'openchamber:compactnew', name: 'compactnew', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.compactnewDescription'), isBuiltIn: true },
           ...(hasSession
             ? [{ id: 'openchamber:btw', name: 'btw', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.btwDescription'), isOpenChamber: true }]
             : []
@@ -393,6 +395,8 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
         return <Icon name="time" className="h-3.5 w-3.5" />;
       case 'compact':
         return <Icon name="scissors" className="h-3.5 w-3.5 text-muted-foreground" />;
+      case 'compactnew':
+        return <Icon name="chat-new" className="h-3.5 w-3.5 text-muted-foreground" />;
       case 'review':
         return <Icon name="search-eye" className="h-3.5 w-3.5 text-muted-foreground" />;
       case 'test':

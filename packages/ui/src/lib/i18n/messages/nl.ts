@@ -2404,6 +2404,7 @@ export const dict = {
   'chat.commandAutocomplete.command.redoDescription': 'Eerder ongedaan gemaakte berichten opnieuw uitvoeren',
   'chat.commandAutocomplete.command.timelineDescription': 'Open de gesprekstijdlijn',
   'chat.commandAutocomplete.command.compactDescription': 'Druk de sessiegeschiedenis samen met AI om de context te verkleinen',
+  'chat.commandAutocomplete.command.compactnewDescription': 'Comprimeer deze sessie en ga verder in een nieuwe chat met de samenvatting',
   'chat.commandAutocomplete.command.summaryDescription': 'Niet-destructieve sessiesamenvatting. Optionele onderwerpverwijzing achter de opdracht.',
   'chat.commandAutocomplete.command.workspaceReviewDescription': 'Review de diff van de werkruimte op bedoeling, juistheid en toereikendheid; bevindingen worden op ernst ingedeeld.',
   'chat.commandAutocomplete.command.handoffReviewDescription': 'Maak een aparte reviewsessie aan uit een gegenereerde overdracht of hergebruik die.',
