@@ -3511,6 +3511,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.workStatus.teamBoard.group.byStatus': 'Por estado',
   'chat.workStatus.teamBoard.group.byMember': 'Por agente',
   'chat.workStatus.teamBoard.group.byDomain': 'Por subequipo',
+  'chat.workStatus.teamBoard.view.board': 'Tablero',
+  'chat.workStatus.teamBoard.view.chats': 'Chats',
   'chat.workStatus.teamBoard.status.pending': 'Planificado',
   'chat.workStatus.teamBoard.status.in_progress': 'En curso',
   'chat.workStatus.teamBoard.status.completed': 'Completado',

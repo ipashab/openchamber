@@ -3520,6 +3520,8 @@ export const dict = {
   'chat.workStatus.teamBoard.group.byStatus': 'Nach Status',
   'chat.workStatus.teamBoard.group.byMember': 'Nach Teammate',
   'chat.workStatus.teamBoard.group.byDomain': 'Nach Team',
+  'chat.workStatus.teamBoard.view.board': 'Pinnwand',
+  'chat.workStatus.teamBoard.view.chats': 'Chats',
   'chat.workStatus.teamBoard.status.pending': 'Geplant',
   'chat.workStatus.teamBoard.status.in_progress': 'In Arbeit',
   'chat.workStatus.teamBoard.status.completed': 'Erledigt',

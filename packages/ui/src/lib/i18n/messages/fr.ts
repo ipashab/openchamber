@@ -3521,6 +3521,8 @@ export const dict = {
   'chat.workStatus.teamBoard.group.byStatus': 'Par statut',
   'chat.workStatus.teamBoard.group.byMember': 'Par agent',
   'chat.workStatus.teamBoard.group.byDomain': 'Par sous-équipe',
+  'chat.workStatus.teamBoard.view.board': 'Tableau',
+  'chat.workStatus.teamBoard.view.chats': 'Discussions',
   'chat.workStatus.teamBoard.status.pending': 'Planifié',
   'chat.workStatus.teamBoard.status.in_progress': 'En cours',
   'chat.workStatus.teamBoard.status.completed': 'Terminé',

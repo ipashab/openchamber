@@ -3522,6 +3522,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.workStatus.teamBoard.group.byStatus': 'ステータス別',
   'chat.workStatus.teamBoard.group.byMember': 'メンバー別',
   'chat.workStatus.teamBoard.group.byDomain': 'サブチーム別',
+  'chat.workStatus.teamBoard.view.board': 'ボード',
+  'chat.workStatus.teamBoard.view.chats': 'チャット',
   'chat.workStatus.teamBoard.status.pending': '計画済み',
   'chat.workStatus.teamBoard.status.in_progress': '作業中',
   'chat.workStatus.teamBoard.status.completed': '完了',

@@ -10,6 +10,11 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useTeamBoard } from '@/hooks/useTeamBoard';
 import { useTeamMemberColors } from '@/hooks/useTeamMemberColors';
 import {
+  readTeamBoardView,
+  writeTeamBoardView,
+  type TeamBoardViewMode,
+} from '@/lib/team/teamBoardViewPrefs';
+import {
   TEAM_DOMAIN_IDS,
   TEAM_DOMAIN_LABEL_KEYS,
   type TeamMember,
@@ -70,22 +75,33 @@ const sortTasks = (tasks: readonly TeamTask[]): TeamTask[] =>
 type Props = {
   sessionId: string | null;
   directory: string | null;
+  /**
+   * Renders one member's chat column for the "Chats" face of a team tab.
+   * Injected by the context panel because a direct ChatView import would
+   * close a module cycle (ChatContainer renders the work-status panel, whose
+   * team section renders this view). Hosts without the injection — the
+   * mobile/VS Code dialog — show no toggle and board only.
+   */
+  chatColumn?: (member: TeamMember, directory: string) => React.ReactNode;
 };
 
 /**
- * The team's backlog over the same live data the panel section shows: the
- * three status columns, a column per teammate, or a column per sub-team with
- * its lead named — chosen with the header toggle and remembered across
- * opens. The board is read-only by design — task lifecycle belongs to the
- * team's agents; this is where the user watches it move. The roster strip
+ * The team over the same live data the panel section shows, in two faces: the
+ * task board — the three status columns, a column per teammate, or a column
+ * per sub-team with its lead named, chosen with the header grouping toggle
+ * and remembered across opens — or the parallel chat columns of the whole
+ * roster (desktop context panel; injected by the host). Both faces stay
+ * read-only by design: task lifecycle and member briefings belong to the
+ * team's agents; this is where the user watches them move. The roster strip
  * above the columns keeps the same open-the-session affordance the section
- * rows already have, ordered as an org chart when sub-teams exist.
+ * rows already have, ordered as an org chart when sub-teams exist; the chat
+ * columns' own headers carry it in that face.
  *
  * Rendered by both the dialog and the context-panel tab; it fills whatever
  * height the host gives it and scrolls its own columns. The header also
  * opens the live-roster editor dialog.
  */
-export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
+export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColumn }) => {
   const { t } = useI18n();
   const { board, loading } = useTeamBoard(sessionId);
   const colorOf = useTeamMemberColors(board);
@@ -93,8 +109,22 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
   const [grouping, setGrouping] = React.useState<BoardGroupingMode>(readStoredGrouping);
+  // Board and chats are per-team choices; the state carries the team it was
+  // read for, so a late-arriving board re-reads its own preference.
+  const [view, setView] = React.useState<{ teamId: string; mode: TeamBoardViewMode }>({ teamId: '', mode: 'board' });
   const [editOpen, setEditOpen] = React.useState(false);
   const [detailTaskId, setDetailTaskId] = React.useState<string | null>(null);
+
+  if (board && view.teamId !== board.id) {
+    setView({ teamId: board.id, mode: readTeamBoardView(board.id) });
+  }
+
+  const changeView = React.useCallback((mode: TeamBoardViewMode) => {
+    setView((current) => {
+      if (current.mode !== mode) writeTeamBoardView(current.teamId, mode);
+      return { ...current, mode };
+    });
+  }, []);
 
   const openMemberSession = React.useCallback((member: TeamMember) => {
     if (!directory) return;
@@ -248,26 +278,46 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <div className="flex items-center gap-1 rounded-lg border border-border p-0.5" role="group">
-            {(['status', 'member', 'domain'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => changeGrouping(mode)}
-                className={cn(
-                  'rounded-md px-2 py-1 text-[11px] font-medium leading-4 transition-colors',
-                  grouping === mode ? 'bg-[var(--interactive-hover)] text-foreground' : 'text-muted-foreground hover:text-foreground',
-                )}
-                aria-pressed={grouping === mode}
-              >
-                {t(mode === 'status'
-                  ? 'chat.workStatus.teamBoard.group.byStatus'
-                  : mode === 'member'
-                    ? 'chat.workStatus.teamBoard.group.byMember'
-                    : 'chat.workStatus.teamBoard.group.byDomain')}
-              </button>
-            ))}
-          </div>
+          {chatColumn && view.mode === 'chats' ? null : (
+            <div className="flex items-center gap-1 rounded-lg border border-border p-0.5" role="group">
+              {(['status', 'member', 'domain'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => changeGrouping(mode)}
+                  className={cn(
+                    'rounded-md px-2 py-1 text-[11px] font-medium leading-4 transition-colors',
+                    grouping === mode ? 'bg-[var(--interactive-hover)] text-foreground' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                  aria-pressed={grouping === mode}
+                >
+                  {t(mode === 'status'
+                    ? 'chat.workStatus.teamBoard.group.byStatus'
+                    : mode === 'member'
+                      ? 'chat.workStatus.teamBoard.group.byMember'
+                      : 'chat.workStatus.teamBoard.group.byDomain')}
+                </button>
+              ))}
+            </div>
+          )}
+          {chatColumn ? (
+            <div className="flex items-center gap-1 rounded-lg border border-border p-0.5" role="group">
+              {(['board', 'chats'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => changeView(mode)}
+                  className={cn(
+                    'rounded-md px-2 py-1 text-[11px] font-medium leading-4 transition-colors',
+                    view.mode === mode ? 'bg-[var(--interactive-hover)] text-foreground' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                  aria-pressed={view.mode === mode}
+                >
+                  {t(`chat.workStatus.teamBoard.view.${mode}`)}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <Button
             size="icon"
             variant="ghost"
@@ -281,7 +331,8 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
+      {view.mode === 'chats' && chatColumn ? null : (
+        <div className="flex flex-wrap items-center gap-1.5">
         {rosterOrder.map((member) => {
           const visual = MEMBER_VISUALS[member.status];
           const domainLabel = member.domain ? t(TEAM_DOMAIN_LABEL_KEYS[member.domain]) : null;
@@ -320,8 +371,49 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
             </button>
           );
         })}
-      </div>
+        </div>
+      )}
 
+      {view.mode === 'chats' && chatColumn ? (
+        <div className="min-h-0 flex-1 overflow-x-auto">
+          <div className="flex h-full min-h-0 items-stretch gap-2">
+            {rosterOrder.map((member) => {
+              const visual = MEMBER_VISUALS[member.status];
+              const domainLabel = member.domain ? t(TEAM_DOMAIN_LABEL_KEYS[member.domain]) : null;
+              return (
+                <div key={member.slotId} className="flex h-full min-h-0 min-w-72 flex-1 basis-72 flex-col gap-1.5">
+                  {/* The column header carries the roster chip's affordance: identity
+                      hue, live status, team mail — click opens the full chat tab. */}
+                  <button
+                    type="button"
+                    onClick={() => openMemberSession(member)}
+                    className="flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-[var(--surface-elevated)] px-2 py-1 text-left text-[11px] font-medium leading-4 transition-colors hover:bg-[var(--interactive-hover)]"
+                    title={[
+                      t('chat.workStatus.team.openMember', { name: member.name }),
+                      domainLabel,
+                      member.isDomainLead ? t('chat.workStatus.team.domainLead') : null,
+                    ].filter(Boolean).join(' · ')}
+                  >
+                    <Icon name={visual.icon} className="size-3.5 shrink-0" style={visual.color ? { color: visual.color } : undefined} />
+                    <span className="min-w-0 flex-1 truncate" style={{ color: colorOf(member.slotId) ?? 'var(--foreground)' }}>{member.name}</span>
+                    {member.unreadCount > 0 ? (
+                      <span
+                        className="shrink-0 rounded-full px-1.5"
+                        style={{ color: 'var(--status-info)', backgroundColor: 'color-mix(in srgb, var(--status-info) 18%, transparent)' }}
+                      >
+                        {member.unreadCount}
+                      </span>
+                    ) : null}
+                  </button>
+                  <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border">
+                    {chatColumn(member, board.directory)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
       <div className="min-h-40 flex-1 overflow-auto">
         {board.tasks.length === 0 ? (
           <div className="flex h-full min-h-40 items-center justify-center text-[13px] text-muted-foreground">
@@ -397,6 +489,7 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
           </div>
         )}
       </div>
+      )}
 
       {editOpen ? (
         <TeamEditDialog
