@@ -22,6 +22,7 @@ import {
   type TeamTaskStatus,
 } from '@/lib/team/team-board-api';
 import { TeamEditDialog } from '@/components/session/team/TeamEditDialog';
+import { TeamAddTaskDialog } from './TeamAddTaskDialog';
 import { TeamTaskDetailsDialog } from './TeamTaskDetailsDialog';
 import { TeamActivityView } from './TeamActivityView';
 
@@ -93,11 +94,14 @@ type Props = {
  * toggle and remembered across opens — the parallel chat columns of the whole
  * roster (desktop context panel; injected by the host) — and the activity
  * feed, the mailbox and the task board merged newest first, paged into
- * retained history on demand. Every face stays read-only by design: task
- * lifecycle and member briefings belong to the team's agents; this is where
- * the user watches them move. The roster strip above the columns keeps the
- * same open-the-session affordance the section rows already have; the chat
- * columns and the feed are the faces where it is carried by their own rows.
+ * retained history on demand. The faces stay read-only; the one write is the
+ * board quick-add — a task the user files without asking the lead to relay
+ * it — which follows the same assignment semantics the lead's own tool path
+ * uses. Task lifecycle and member briefings otherwise belong to the team's
+ * agents; this is where the user watches them move. The roster strip above
+ * the columns keeps the same open-the-session affordance the section rows
+ * already have; the chat columns and the feed are the faces where it is
+ * carried by their own rows.
  *
  * Rendered by both the dialog and the context-panel tab; it fills whatever
  * height the host gives it and scrolls its own columns. The header also
@@ -115,6 +119,7 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColum
   // read for, so a late-arriving board re-reads its own preference.
   const [view, setView] = React.useState<{ teamId: string; mode: TeamBoardViewMode }>({ teamId: '', mode: 'board' });
   const [editOpen, setEditOpen] = React.useState(false);
+  const [addTaskOpen, setAddTaskOpen] = React.useState(false);
   const [detailTaskId, setDetailTaskId] = React.useState<string | null>(null);
 
   if (board && view.teamId !== board.id) {
@@ -162,7 +167,11 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColum
     );
   }
 
-  const nameOf = (slotId: string) => board.members.find((member) => member.slotId === slotId)?.name ?? slotId;
+  // 'user' is the app's pseudo-id on tasks the user added themselves; where a
+  // slotId would name a teammate, this reads as "You" instead.
+  const nameOf = (slotId: string) => slotId === 'user'
+    ? t('chat.workStatus.teamBoard.you')
+    : board.members.find((member) => member.slotId === slotId)?.name ?? slotId;
 
   // Клик по карточке открывает диалог; данные берутся с доски на каждом
   // рендере, поэтому статус в открытом диалоге живёт вместе с доской.
@@ -320,6 +329,20 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColum
                 </button>
               ))}
           </div>
+          {/* The quick-add belongs to the board face; the chats and activity
+              faces show what the team already does, not what to file next. */}
+          {view.mode === 'board' ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-6 shrink-0 text-muted-foreground"
+              onClick={() => setAddTaskOpen(true)}
+              aria-label={t('chat.workStatus.teamBoard.addTask.button')}
+              title={t('chat.workStatus.teamBoard.addTask.button')}
+            >
+              <Icon name="add" className="size-3.5" />
+            </Button>
+          ) : null}
           <Button
             size="icon"
             variant="ghost"
@@ -507,6 +530,14 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColum
           onOpenChange={setEditOpen}
           board={board}
           directory={directory}
+        />
+      ) : null}
+
+      {addTaskOpen ? (
+        <TeamAddTaskDialog
+          open
+          onOpenChange={setAddTaskOpen}
+          board={board}
         />
       ) : null}
 

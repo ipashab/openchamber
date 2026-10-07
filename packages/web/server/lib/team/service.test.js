@@ -529,6 +529,57 @@ describe('createFromUi', () => {
   });
 });
 
+describe('createTaskFromUi', () => {
+  it('puts an unowned task on the board, marked as the user\'s', async () => {
+    const { service, sent, broadcasts } = await makeService();
+    const { teamId } = await makeTeam(service);
+    const sentBefore = sent.length;
+
+    const { task } = await service.createTaskFromUi({ teamId, input: { subject: 'Проверить сборку' } });
+
+    expect(task.status).toBe('pending');
+    expect(task.owner).toBeNull();
+    expect(task.createdBy).toBe('user');
+    // No owner means no wake: the task waits on the board for the lead.
+    expect(sent).toHaveLength(sentBefore);
+
+    const [team] = await service.snapshot();
+    const persisted = team.tasks.find((entry) => entry.taskId === task.taskId);
+    expect(persisted.createdBy).toBe('user');
+    expect(broadcasts.some((event) => event.type === 'openchamber:team-task' && event.properties.taskId === task.taskId)).toBe(true);
+  });
+
+  it('carries the brief and wakes the owner with the assignment', async () => {
+    const { service, sent } = await makeService();
+    const { teamId, roster } = await makeTeam(service);
+    const alice = roster[0];
+
+    const { task } = await service.createTaskFromUi({
+      teamId,
+      input: { subject: 'Собрать отчёт', description: 'По всем сервисам', owner: alice.slotId },
+    });
+
+    expect(task.owner).toBe(alice.slotId);
+    const wake = sent.filter((entry) => entry.sessionID === alice.sessionId).at(-1);
+    expect(wake.payload.prompt).toContain('Task assigned to you: Собрать отчёт');
+    expect(wake.payload.prompt).toContain('По всем сервисам');
+  });
+
+  it('rejects unknown teams, empty subjects and invalid owners', async () => {
+    const { service } = await makeService();
+    const { teamId } = await makeTeam(service);
+
+    await expect(service.createTaskFromUi({ teamId: 'team_none', input: { subject: 'X' } }))
+      .rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.createTaskFromUi({ teamId, input: { subject: '   ' } }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.createTaskFromUi({ teamId, input: { subject: 'X', owner: 'lead' } }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.createTaskFromUi({ teamId, input: { subject: 'X', owner: 'member_nobody' } }))
+      .rejects.toMatchObject({ statusCode: 404 });
+  });
+});
+
 describe('team service: sub-teams and live roster editing', () => {
   it('spawns a sub-team lead and nests its workers under it', async () => {
     const { service, sent, openCodeState } = await makeService();

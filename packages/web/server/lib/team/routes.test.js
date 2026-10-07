@@ -179,6 +179,39 @@ describe('team routes', () => {
     expect(service.addMemberFromUi).toHaveBeenCalledTimes(1);
   });
 
+  it('creates a task on POST /api/openchamber/teams/:teamId/tasks and forwards the result', async () => {
+    const app = makeApp();
+    const service = makeService();
+    service.createTaskFromUi = vi.fn(async ({ teamId, input }) => {
+      expect(teamId).toBe('team_1');
+      expect(input.subject).toBe('Проверить сборку');
+      return { task: { taskId: 'task_7', subject: 'Проверить сборку', status: 'pending', owner: null } };
+    });
+    registerTeamRoutes(app, { teamService: service, teamPresets: makePresets() });
+
+    const res = makeRes();
+    await findRoute(app, 'POST', '/api/openchamber/teams/:teamId/tasks')
+      .handler({ params: { teamId: 'team_1' }, body: { subject: 'Проверить сборку' } }, res);
+    expect(res.statusCode).toBe(201);
+    expect(res.body.task.taskId).toBe('task_7');
+    expect(service.createTaskFromUi).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes a validation failure through as 400 on task creation', async () => {
+    const app = makeApp();
+    const service = makeService();
+    const invalid = new Error('subject is required: what the task asks for');
+    invalid.statusCode = 400;
+    service.createTaskFromUi = vi.fn(async () => { throw invalid; });
+    registerTeamRoutes(app, { teamService: service, teamPresets: makePresets() });
+
+    const res = makeRes();
+    await findRoute(app, 'POST', '/api/openchamber/teams/:teamId/tasks')
+      .handler({ params: { teamId: 'team_1' }, body: {} }, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toContain('subject is required');
+  });
+
   it('forwards TeamError status codes from member mutations and shutdown requests', async () => {
     const app = makeApp();
     const service = makeService();

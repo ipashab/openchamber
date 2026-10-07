@@ -168,3 +168,33 @@ export const fetchTeamActivity = async (
   }
   return parsed.data;
 };
+
+/**
+ * One task the user adds to the board from the panel. The board refetches
+ * through the team-changed signal the creation broadcast already carried, so
+ * the caller needs the failure, not the created row: a thrown error names
+ * the server's reason, a resolved promise means the task is on the board.
+ */
+export const createTeamTask = async (
+  teamId: string,
+  input: { subject: string; description?: string; owner?: string },
+  fetchImpl: typeof runtimeFetch = runtimeFetch,
+): Promise<void> => {
+  const response = await fetchImpl(`${TEAM_BOARD_ROUTE}/${encodeURIComponent(teamId)}/tasks`, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    const parsedError = z.object({ error: z.string() }).safeParse(body);
+    // The server's reason when it sent one; a non-JSON or shapeless refusal
+    // falls back to the status code rather than guessing.
+    throw new Error(parsedError.success && parsedError.data.error.trim() ? parsedError.data.error : `Team task creation failed: ${response.status}`);
+  }
+  const body = await response.json().catch(() => null);
+  const parsed = z.object({ task: teamTaskSchema }).safeParse(body);
+  if (!parsed.success) {
+    throw new Error('Team task creation response did not match the expected shape');
+  }
+};
