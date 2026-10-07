@@ -23,6 +23,7 @@ import {
 } from '@/lib/team/team-board-api';
 import { TeamEditDialog } from '@/components/session/team/TeamEditDialog';
 import { TeamTaskDetailsDialog } from './TeamTaskDetailsDialog';
+import { TeamActivityView } from './TeamActivityView';
 
 const GROUPING_STORAGE_KEY = 'oc.teamBoard.grouping.v1';
 
@@ -80,22 +81,23 @@ type Props = {
    * Injected by the context panel because a direct ChatView import would
    * close a module cycle (ChatContainer renders the work-status panel, whose
    * team section renders this view). Hosts without the injection — the
-   * mobile/VS Code dialog — show no toggle and board only.
+   * mobile/VS Code dialog — show board and activity only.
    */
   chatColumn?: (member: TeamMember, directory: string) => React.ReactNode;
 };
 
 /**
- * The team over the same live data the panel section shows, in two faces: the
- * task board — the three status columns, a column per teammate, or a column
- * per sub-team with its lead named, chosen with the header grouping toggle
- * and remembered across opens — or the parallel chat columns of the whole
- * roster (desktop context panel; injected by the host). Both faces stay
- * read-only by design: task lifecycle and member briefings belong to the
- * team's agents; this is where the user watches them move. The roster strip
- * above the columns keeps the same open-the-session affordance the section
- * rows already have, ordered as an org chart when sub-teams exist; the chat
- * columns' own headers carry it in that face.
+ * The team over the same live data the panel section shows, in three faces:
+ * the task board — the three status columns, a column per teammate, or a
+ * column per sub-team with its lead named, chosen with the header grouping
+ * toggle and remembered across opens — the parallel chat columns of the whole
+ * roster (desktop context panel; injected by the host) — and the activity
+ * feed, the mailbox and the task board merged newest first, paged into
+ * retained history on demand. Every face stays read-only by design: task
+ * lifecycle and member briefings belong to the team's agents; this is where
+ * the user watches them move. The roster strip above the columns keeps the
+ * same open-the-session affordance the section rows already have; the chat
+ * columns and the feed are the faces where it is carried by their own rows.
  *
  * Rendered by both the dialog and the context-panel tab; it fills whatever
  * height the host gives it and scrolls its own columns. The header also
@@ -300,9 +302,10 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColum
               ))}
             </div>
           )}
-          {chatColumn ? (
-            <div className="flex items-center gap-1 rounded-lg border border-border p-0.5" role="group">
-              {(['board', 'chats'] as const).map((mode) => (
+          {/* Chats ride the host-injected columns; board and activity are the
+              faces every runtime can render. */}
+          <div className="flex items-center gap-1 rounded-lg border border-border p-0.5" role="group">
+            {(chatColumn ? (['board', 'chats', 'activity'] as const) : (['board', 'activity'] as const)).map((mode) => (
                 <button
                   key={mode}
                   type="button"
@@ -316,8 +319,7 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColum
                   {t(`chat.workStatus.teamBoard.view.${mode}`)}
                 </button>
               ))}
-            </div>
-          ) : null}
+          </div>
           <Button
             size="icon"
             variant="ghost"
@@ -331,7 +333,9 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColum
         </div>
       </div>
 
-      {view.mode === 'chats' && chatColumn ? null : (
+      {/* The roster chips belong to the board face; chats carry the member in
+          each column header and activity in the rows themselves. */}
+      {view.mode === 'chats' && chatColumn ? null : view.mode === 'activity' ? null : (
         <div className="flex flex-wrap items-center gap-1.5">
         {rosterOrder.map((member) => {
           const visual = MEMBER_VISUALS[member.status];
@@ -374,7 +378,13 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColum
         </div>
       )}
 
-      {view.mode === 'chats' && chatColumn ? (
+      {view.mode === 'activity' ? (
+        <TeamActivityView
+          board={board}
+          colorOf={colorOf}
+          nameOf={nameOf}
+        />
+      ) : view.mode === 'chats' && chatColumn ? (
         <div className="min-h-0 flex-1 overflow-x-auto">
           <div className="flex h-full min-h-0 items-stretch gap-2">
             {rosterOrder.map((member) => {

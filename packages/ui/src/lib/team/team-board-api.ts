@@ -72,7 +72,37 @@ const teamMessageSchema = z.object({
   createdAt: z.number(),
 });
 
-export const teamBoardSchema = z.object({
+// One page of the activity feed: the merged mailbox and task streams. The
+// server pages through exactly the state it retains; the cursor is opaque.
+const teamActivityEventSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('message'),
+    id: z.string(),
+    at: z.number(),
+    from: z.string(),
+    to: z.string(),
+    type: z.string(),
+    content: z.string(),
+    summary: z.string().nullable(),
+    read: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal('task'),
+    id: z.string(),
+    at: z.number(),
+    taskId: z.string(),
+    subject: z.string(),
+    status: teamTaskStatusSchema,
+    owner: z.string().nullable(),
+    createdAt: z.number(),
+  }),
+]);
+
+const teamActivityPageSchema = z.object({
+  teamId: z.string(),
+  events: z.array(teamActivityEventSchema),
+  nextCursor: z.string().nullable(),
+});export const teamBoardSchema = z.object({
   id: z.string(),
   name: z.string(),
   directory: z.string(),
@@ -86,6 +116,8 @@ export type TeamMember = z.infer<typeof teamMemberSchema>;
 export type TeamTask = z.infer<typeof teamTaskSchema>;
 export type TeamMessage = z.infer<typeof teamMessageSchema>;
 export type TeamBoard = z.infer<typeof teamBoardSchema>;
+export type TeamActivityEvent = z.infer<typeof teamActivityEventSchema>;
+export type TeamActivityPage = z.infer<typeof teamActivityPageSchema>;
 
 type FetchTeamBoards = (fetchImpl?: typeof runtimeFetch) => Promise<TeamBoard[]>;
 
@@ -105,4 +137,34 @@ export const fetchTeamBoards: FetchTeamBoards = async (fetchImpl = runtimeFetch)
     throw new Error('Team board response did not match the expected shape');
   }
   return parsed.data.teams;
+};
+
+/**
+ * One page of a team's activity feed, newest first. Pass the previous page's
+ * `nextCursor` as `before` to walk into retained history until the cursor
+ * comes back null. The same strict parse as the board: a shape the server
+ * did not send fails the fetch rather than putting half-typed rows in the
+ * feed.
+ */
+export const fetchTeamActivity = async (
+  teamId: string,
+  options: { before?: string; limit?: number; fetchImpl?: typeof runtimeFetch } = {},
+): Promise<TeamActivityPage> => {
+  const fetchImpl = options.fetchImpl ?? runtimeFetch;
+  const search = new URLSearchParams();
+  if (options.before !== undefined) search.set('before', options.before);
+  if (options.limit !== undefined) search.set('limit', String(options.limit));
+  const query = search.size > 0 ? `?${search.toString()}` : '';
+  const response = await fetchImpl(`${TEAM_BOARD_ROUTE}/${encodeURIComponent(teamId)}/activity${query}`, {
+    headers: { accept: 'application/json' },
+  });
+  if (!response.ok) {
+    throw new Error(`Team activity request failed: ${response.status}`);
+  }
+  const body = await response.json().catch(() => null);
+  const parsed = teamActivityPageSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new Error('Team activity response did not match the expected shape');
+  }
+  return parsed.data;
 };
