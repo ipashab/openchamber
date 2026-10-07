@@ -4,7 +4,11 @@ This fork carries one coherent block of work on top of upstream
 OpenChamber: **Team Mode as a first-class surface** — everything a team
 is stays observable from the app, from the roster's identity to the
 whole team's activity, and the user can staff and direct a running team
-without going through the lead for what is their own decision.
+without going through the lead for what is their own decision. Around
+that core, the fork answers three more needs the panel surfaced: a task
+card that reports on its pull request, a decision in the chat that lands
+on the board as a task, and **Missions** — goal prompts filed into a
+paced queue of sessions and teams of their own.
 
 Fork base: upstream `6bdacd7` (2026-10-06). Everything after it is this
 fork's work; upstream merges cleanly underneath.
@@ -13,6 +17,8 @@ Owning docs that move with the code:
 
 - `packages/web/server/lib/team/DOCUMENTATION.md` — the server contract:
   state, events, tool surface, every route the app itself uses.
+- `packages/web/server/lib/missions/DOCUMENTATION.md` — the missions
+  contract: statuses, the queue's pacing, every route.
 - `packages/ui/src/sync/DOCUMENTATION.md` — the sync side of the panel.
 
 ## The features, in the order they landed
@@ -90,6 +96,42 @@ An "Add task" action on the board face: the user files a task directly —
 subject, optional brief, optional teammate as owner. Assignment rides
 the lead's own semantics (mailbox entry + wake with details); the task
 carries the `'user'` pseudo-id the panel renders as "You".
+
+### A task card answers for its pull request — `43fcc51`
+
+Both task tools take a `prUrl`, and the board keeps it: a PR chip on the
+task card says where the work stands — draft or open, mergeable if
+GitHub resolves it, CI green/failing/pending — straight from lazily
+loaded GitHub state with a 60-second cache. The card is a button, so the
+chip carries no link; the PR row in the task details is the link, and
+the same row edits the URL inline.
+
+### A selection can put a task on the team board — `8ca397c`
+
+The chat's selection menu grows a **Team task** action in chats that
+belong to a team: the first line of the selection becomes the task
+subject, the rest rides as the brief, filed through the same quick-add
+endpoint the panel uses. Which team a session belongs to is answered
+once by the team section and published to a small membership store the
+per-message menu reads — chats outside any team never see the action.
+
+### `/compactnew` continues a long chat in a fresh one — `eb2fa71`
+
+Compaction and the fresh start were two commands the user had to know
+to combine — and `/fork` copied the pages the summary was meant to
+replace. `/compactnew` does the pair in order: the session is compacted,
+then forked from that final state, so the fresh chat starts from the
+summary and the old one stays in the list as the archive.
+
+### Missions: goals filed into a paced queue — `7695098`
+
+A **Goals** page in the sidebar. A mission is a goal prompt plus a
+mode — a fresh session that receives it, or a lead-led team whose
+first task it is. The executor paces the file: two lanes at a time,
+the rest queued in creation order, each turn observed and marked
+completed when it goes idle after busy; the watch ends after an hour no
+matter what, so no session wedges the queue. State survives restarts;
+the list hears every state move as an event frame and refetches.
 
 ## Distribution
 
