@@ -135,6 +135,20 @@ The app's own team management rides the same routes:
   if given, gets the lead's own assignment semantics — the mailbox entry is
   the notification, the wake carries the details. Tasks created this way carry
   the `'user'` pseudo-id in `createdBy`, which the panel renders as "You".
+- `GET /api/openchamber/teams/:teamId/pull-summaries` — the board's PR chips:
+  the live GitHub state of every task carrying a pull link, keyed by task id.
+  Answers follow the tracked-items status contract — `ok` with the map (a
+  task whose PR could not be resolved maps to `null`, meaning unknown, not
+  closed), or `disconnected` / `unavailable` with no map, so the board keeps
+  rendering when GitHub cannot answer. Summaries are cached per pull for a
+  short TTL window: the burst of `team-task` events a busy team produces costs
+  the cache, not the provider. The reader is wired in
+  `team/pull-status.js` over the same lazy GitHub loaders the tracked-items
+  readers use; runtimes without it answer `501`.
+- `PUT /api/openchamber/teams/:teamId/tasks/:taskId/pr` — the details dialog's
+  PR row: link a task to its pull request, or clear the link with an empty
+  string. The same `prUrl` shape `team.task_create` and `team.task_update`
+  accept, so the user and the agents share one contract.
 - `POST /api/openchamber/teams/:teamId/members/:slotId/shutdown` — the
   dismissal button of the live-roster editor; the same approval handshake
   the lead tool uses, requested by the user.

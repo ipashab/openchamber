@@ -32,6 +32,7 @@ import { createTrackedItemsPersistence } from '../tracked-items/persistence.js';
 import { registerTrackedItemsRoutes } from '../tracked-items/routes.js';
 import { registerOpenChamberSessionRoutes } from '../openchamber-sessions/routes.js';
 import { registerTeamRoutes } from '../team/routes.js';
+import { createTeamPullStatus } from '../team/pull-status.js';
 import { registerOpenChamberControlRoutes } from '../openchamber-control/routes.js';
 import { registerMarkdownImageGrantRoutes } from '../markdown-image-grants/routes.js';
 import { registerSkillRoutes } from './skill-routes.js';
@@ -312,7 +313,11 @@ export const createFeatureRoutesRuntime = (dependencies) => {
 
     registerOpenChamberControlRoutes(app, { controlService: openChamberControlService });
 
-    registerTeamRoutes(app, { teamService, teamPresets });
+    registerTeamRoutes(app, {
+      teamService,
+      teamPresets,
+      teamPullStatuses: createTeamPullStatus(),
+    });
 
     registerMarkdownImageGrantRoutes(app, {
       fsPromises,

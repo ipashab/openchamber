@@ -578,6 +578,52 @@ describe('createTaskFromUi', () => {
     await expect(service.createTaskFromUi({ teamId, input: { subject: 'X', owner: 'member_nobody' } }))
       .rejects.toMatchObject({ statusCode: 404 });
   });
+
+  it('links a task to its pull request from the tool path and the dialog alike', async () => {
+    const { service } = await makeService();
+    const { teamId } = await makeTeam(service);
+    const url = 'https://github.com/octo/repo/pull/42';
+
+    const { task } = await service.createTaskFromUi({ teamId, input: { subject: 'Review the PR', prUrl: url } });
+    expect(task.pull).toEqual({ owner: 'octo', repo: 'repo', number: 42, url });
+
+    const [snapshot] = await service.snapshot();
+    const persisted = snapshot.tasks.find((entry) => entry.taskId === task.taskId);
+    expect(persisted.pull).toEqual({ owner: 'octo', repo: 'repo', number: 42, url });
+
+    // The dialog writes through the same shape the agent tool accepts.
+    const updated = await service.setTaskPullFromUi({
+      teamId,
+      taskId: task.taskId,
+      prUrl: 'https://github.com/octo/repo/pull/43/',
+    });
+    expect(updated.task.pull).toEqual({ owner: 'octo', repo: 'repo', number: 43, url: 'https://github.com/octo/repo/pull/43' });
+
+    // An empty string clears the link.
+    const cleared = await service.setTaskPullFromUi({ teamId, taskId: task.taskId, prUrl: '' });
+    expect(cleared.task.pull).toBeNull();
+    const [afterClear] = await service.snapshot();
+    expect(afterClear.tasks.find((entry) => entry.taskId === task.taskId).pull).toBeNull();
+  });
+
+  it('shows the pull to the roster and rejects malformed URLs', async () => {
+    const { service } = await makeService();
+    const { teamId } = await makeTeam(service);
+    const url = 'https://github.com/octo/repo/pull/42';
+
+    const { task } = await service.executeAction('team.task_create', { subject: 'Ship it', prUrl: url }, 'ses_lead');
+    expect(task.pull).toEqual({ owner: 'octo', repo: 'repo', number: 42, url });
+
+    const { tasks } = await service.executeAction('team.task_list', {}, 'ses_lead');
+    expect(tasks.find((entry) => entry.taskId === task.taskId).pull.number).toBe(42);
+
+    await expect(service.executeAction('team.task_update', { taskId: task.taskId, prUrl: 'github.com/octo/repo/pull/1' }, 'ses_lead'))
+      .rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.setTaskPullFromUi({ teamId, taskId: task.taskId, prUrl: 'not a url' }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.setTaskPullFromUi({ teamId, taskId: 'task_none', prUrl: url }))
+      .rejects.toMatchObject({ statusCode: 404 });
+  });
 });
 
 describe('team service: sub-teams and live roster editing', () => {

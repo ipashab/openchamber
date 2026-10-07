@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { I18nProvider } from '@/lib/i18n';
-import type { TeamTask } from '@/lib/team/team-board-api';
+import type { TeamPullSummary, TeamTask } from '@/lib/team/team-board-api';
 
 mock.module('@/components/ui/dialog', () => ({
   Dialog: ({ children }: React.PropsWithChildren) => <>{children}</>,
@@ -42,9 +42,18 @@ const bareTask: TeamTask = {
 const nameOf = (slotId: string) => ({ lead: 'Team Lead', member_alice: 'Alice' })[slotId] ?? slotId;
 const subjectOf = (taskId: string) => ({ task_map: 'Map the modules' })[taskId] ?? taskId;
 
-const markupFor = (task: TeamTask): string => renderToStaticMarkup(
+const markupFor = (task: TeamTask, pullSummary: TeamPullSummary | null = null): string => renderToStaticMarkup(
   <I18nProvider>
-    <TeamTaskDetailsDialog open onOpenChange={() => undefined} task={task} nameOf={nameOf} subjectOf={subjectOf} />
+    <TeamTaskDetailsDialog
+      open
+      onOpenChange={() => undefined}
+      task={task}
+      teamId="team_1"
+      nameOf={nameOf}
+      subjectOf={subjectOf}
+      pullSummary={pullSummary}
+      pullLive={false}
+    />
   </I18nProvider>,
 );
 
@@ -72,5 +81,34 @@ describe('TeamTaskDetailsDialog', () => {
     expect(markup).not.toContain('Created by');
     expect(markup).not.toContain('Blocked by');
     expect(markup).not.toContain('Updated');
+  });
+
+  test('a task with a linked PR shows its live state beside the link affordance', () => {
+    const withPull: TeamTask = {
+      ...fullTask,
+      pull: { owner: 'octo', repo: 'repo', number: 42, url: 'https://github.com/octo/repo/pull/42' },
+    };
+    const markup = markupFor(withPull, {
+      owner: 'octo',
+      repo: 'repo',
+      number: 42,
+      state: 'open',
+      draft: false,
+      title: 'Add the guard',
+      mergeable: null,
+      checks: { state: 'failure', total: 6 },
+    });
+
+    expect(markup).toContain('Pull request');
+    expect(markup).toContain('PR #42 · open · CI failing');
+    expect(markup).toContain('Open');
+    expect(markup).toContain('Change');
+  });
+
+  test('a task without a PR offers to link one', () => {
+    const markup = markupFor(bareTask);
+
+    expect(markup).toContain('Not linked to a PR yet');
+    expect(markup).toContain('Link a PR');
   });
 });

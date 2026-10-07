@@ -9,6 +9,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { useTeamBoard } from '@/hooks/useTeamBoard';
 import { useTeamMemberColors } from '@/hooks/useTeamMemberColors';
+import { useTeamPullSummaries } from '@/hooks/useTeamPullSummaries';
 import {
   readTeamBoardView,
   writeTeamBoardView,
@@ -23,6 +24,7 @@ import {
 } from '@/lib/team/team-board-api';
 import { TeamEditDialog } from '@/components/session/team/TeamEditDialog';
 import { TeamAddTaskDialog } from './TeamAddTaskDialog';
+import { TeamPullStateChip } from './TeamPullStateChip';
 import { TeamTaskDetailsDialog } from './TeamTaskDetailsDialog';
 import { TeamActivityView } from './TeamActivityView';
 
@@ -111,6 +113,10 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColum
   const { t } = useI18n();
   const { board, loading } = useTeamBoard(sessionId);
   const colorOf = useTeamMemberColors(board);
+  // Live GitHub state for the PR chips; a board without linked PRs never
+  // talks to the provider.
+  const hasPulls = board?.tasks.some((task) => task.pull != null) ?? false;
+  const { summaries: pullSummaries, live: pullLive } = useTeamPullSummaries(board?.id ?? '', hasPulls);
   const isMobile = useUIStore((state) => state.isMobile);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
@@ -273,6 +279,11 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColum
             {!showStatusIcon && task.owner ? (
               <span className="truncate font-medium" style={{ color: colorOf(task.owner) ?? 'var(--muted-foreground)' }}>{nameOf(task.owner)}</span>
             ) : null}
+          </div>
+        ) : null}
+        {task.pull ? (
+          <div className="mt-1">
+            <TeamPullStateChip pull={task.pull} summary={pullSummaries?.[task.taskId] ?? null} live={pullLive} />
           </div>
         ) : null}
       </button>
@@ -546,9 +557,12 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColum
           open
           onOpenChange={(next) => { if (!next) setDetailTaskId(null); }}
           task={detailTask}
+          teamId={board.id}
           nameOf={nameOf}
           colorOf={colorOf}
           subjectOf={subjectOf}
+          pullSummary={pullSummaries?.[detailTask.taskId] ?? null}
+          pullLive={pullLive}
         />
       ) : null}
     </div>
