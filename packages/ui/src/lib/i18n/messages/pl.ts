@@ -3564,6 +3564,8 @@ export const dict: Record<I18nKey, string> = {
   'team.edit.stopShort': 'Zatrzymaj',
   'team.edit.adding': 'Dodawanie…',
   'team.edit.add': 'Dodaj do zespołu',
+  'team.edit.askLead': 'Poproś lidera o wybór kogoś',
+  'team.edit.askLead.draft': 'Dobierz członka zespołu do: ',
   'team.edit.preset.title': 'Przepis zespołu',
   'team.edit.preset.save': 'Zapisz jako preset',
   'team.edit.preset.download': 'Pobierz JSON',

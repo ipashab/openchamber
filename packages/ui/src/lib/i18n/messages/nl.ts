@@ -3559,6 +3559,8 @@ export const dict = {
   'team.edit.stopShort': 'Stoppen',
   'team.edit.adding': 'Toevoegen…',
   'team.edit.add': 'Aan team toevoegen',
+  'team.edit.askLead': 'Vraag de teamleider iemand te kiezen',
+  'team.edit.askLead.draft': 'Voeg een passend teamlid toe voor: ',
   'team.edit.preset.title': 'Teamrecept',
   'team.edit.preset.save': 'Als preset opslaan',
   'team.edit.preset.download': 'JSON downloaden',

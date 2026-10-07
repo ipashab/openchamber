@@ -3368,6 +3368,8 @@ export const dict = {
   'team.edit.stopShort': 'Durdur',
   'team.edit.adding': 'Ekleniyor…',
   'team.edit.add': 'Ekibe ekle',
+  'team.edit.askLead': 'Liderden birini seçmesini iste',
+  'team.edit.askLead.draft': 'Şuna uygun bir ekip üyesi ekle: ',
   'team.edit.preset.title': 'Takım tarifi',
   'team.edit.preset.save': 'Ön ayar olarak kaydet',
   'team.edit.preset.download': 'JSON indir',

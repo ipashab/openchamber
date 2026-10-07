@@ -21,6 +21,7 @@ import {
   type TeamPresetMember,
 } from '@/lib/team/team-create-api';
 import { TEAM_DOMAIN_LABEL_KEYS, type TeamBoard, type TeamMember } from '@/lib/team/team-board-api';
+import { askLeadToStaff } from '@/lib/team/teamAskLead';
 import { TeamMemberEditor } from './TeamMemberEditor';
 import { useTeamEditorOptions } from './useTeamEditorOptions';
 
@@ -246,6 +247,27 @@ export const TeamEditDialog: React.FC<Props> = ({
               {error}
             </div>
           ) : null}
+
+          {(() => {
+            // Пустая карточка сверху — единственный способ добавить через UI;
+            // напоминание, что состав умеет подбирать и сам лид, закрывает
+            // частый случай «не знаю, кого выбрать».
+            const lead = board.members.find((member) => member.role === 'lead');
+            if (!lead) return null;
+            return (
+              <Button
+                size="sm"
+                variant="link"
+                className="w-full text-xs text-muted-foreground"
+                onClick={() => {
+                  onOpenChange(false);
+                  askLeadToStaff(lead, t('team.edit.askLead.draft'), directory);
+                }}
+              >
+                {t('team.edit.askLead')}
+              </Button>
+            );
+          })()}
 
           <Button
             size="sm"

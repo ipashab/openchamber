@@ -3559,6 +3559,8 @@ export const dict: Record<I18nKey, string> = {
   'team.edit.stopShort': '정지',
   'team.edit.adding': '추가 중…',
   'team.edit.add': '팀에 추가',
+  'team.edit.askLead': '리더에게 알맞은 인원을 요청하기',
+  'team.edit.askLead.draft': '이 용도에 맞는 팀원을 추가해 주세요: ',
   'team.edit.preset.title': '팀 레시피',
   'team.edit.preset.save': '프리셋으로 저장',
   'team.edit.preset.download': 'JSON 다운로드',

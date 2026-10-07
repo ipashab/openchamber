@@ -3560,6 +3560,8 @@ export const dict: Record<I18nKey, string> = {
   'team.edit.stopShort': '停止',
   'team.edit.adding': '正在添加…',
   'team.edit.add': '加入团队',
+  'team.edit.askLead': '请队长来选人',
+  'team.edit.askLead.draft': '为以下需求添加合适的队员：',
   'team.edit.preset.title': '团队配方',
   'team.edit.preset.save': '保存为预设',
   'team.edit.preset.download': '下载 JSON',
