@@ -147,7 +147,7 @@ describe('createAssistantsService', () => {
 
   it('clears a model with null and refuses a broken patch', async () => {
     const { service } = makeService();
-    const { assistant } = await service.createAssistant({ ...input, model: 'okko/Expert' });
+    const { assistant } = await service.createAssistant({ ...input, model: 'anthropic/claude-sonnet-4-5' });
     const { assistant: cleared } = await service.updateAssistant(assistant.id, { model: null });
     expect(cleared.model).toBeNull();
     await expect(service.updateAssistant(assistant.id, { model: 'broken' })).rejects.toThrow(/provider\/model/);

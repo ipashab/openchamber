@@ -121,13 +121,13 @@ describe('createMissionsService', () => {
 
   it('passes the agent and model the form picked to the session and dispatch', async () => {
     const { service, sessionsCreated, sent } = makeService();
-    await service.createMission({ ...input, agent: 'build', model: 'okko/expert' });
+    await service.createMission({ ...input, agent: 'build', model: 'anthropic/claude-sonnet-4-5' });
     await flushAsync();
 
     expect(sessionsCreated[0].input.agent).toBe('build');
-    expect(sessionsCreated[0].input.model).toEqual({ id: 'expert', providerID: 'okko' });
+    expect(sessionsCreated[0].input.model).toEqual({ id: 'claude-sonnet-4-5', providerID: 'anthropic' });
     expect(sent[0].payload.agent).toBe('build');
-    expect(sent[0].payload.model).toBe('okko/expert');
+    expect(sent[0].payload.model).toBe('anthropic/claude-sonnet-4-5');
   });
 
   it('paces the queue: only maxConcurrent missions run, a settled one admits the next', async () => {
