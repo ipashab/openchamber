@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { useTeamBoard } from '@/hooks/useTeamBoard';
+import { useTeamMemberColors } from '@/hooks/useTeamMemberColors';
 import {
   TEAM_DOMAIN_IDS,
   TEAM_DOMAIN_LABEL_KEYS,
@@ -34,7 +35,10 @@ const readStoredGrouping = (): BoardGroupingMode => {
 
 type MemberVisual = { icon: IconName; color?: string };
 
-const MEMBER_VISUALS: Record<TeamMember['status'], MemberVisual> = {
+/** Один визуал на каждый живой статус участника — закрытый словарь, не Record. */
+type MemberVisuals = { [status in TeamMember['status']]: MemberVisual };
+
+const MEMBER_VISUALS: MemberVisuals = {
   busy: { icon: 'record-circle', color: 'var(--status-info)' },
   starting: { icon: 'record-circle', color: 'var(--status-info)' },
   idle: { icon: 'time' },
@@ -44,7 +48,9 @@ const MEMBER_VISUALS: Record<TeamMember['status'], MemberVisual> = {
 
 type TaskVisual = { icon: IconName; color?: string };
 
-const TASK_VISUALS: Record<TeamTaskStatus, TaskVisual> = {
+type TaskVisuals = { [status in TeamTaskStatus]: TaskVisual };
+
+const TASK_VISUALS: TaskVisuals = {
   in_progress: { icon: 'record-circle', color: 'var(--status-info)' },
   pending: { icon: 'time' },
   completed: { icon: 'checkbox-circle', color: 'var(--status-success)' },
@@ -54,7 +60,9 @@ const COLUMN_STATUSES: readonly TeamTaskStatus[] = ['pending', 'in_progress', 'c
 
 // The same stable order as the panel's task list: active work first, waiting
 // behind it, finished last — cards do not jump as work happens.
-const TASK_ORDER: Record<TeamTaskStatus, number> = { in_progress: 0, pending: 1, completed: 2 };
+type TaskOrder = { [status in TeamTaskStatus]: number };
+
+const TASK_ORDER: TaskOrder = { in_progress: 0, pending: 1, completed: 2 };
 
 const sortTasks = (tasks: readonly TeamTask[]): TeamTask[] =>
   [...tasks].sort((left, right) => TASK_ORDER[left.status] - TASK_ORDER[right.status] || right.createdAt - left.createdAt);
@@ -80,6 +88,7 @@ type Props = {
 export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
   const { t } = useI18n();
   const { board, loading } = useTeamBoard(sessionId);
+  const colorOf = useTeamMemberColors(board);
   const isMobile = useUIStore((state) => state.isMobile);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
@@ -148,9 +157,10 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
   // buckets the member grouping has. Empty domains stay hidden — the board
   // shows the sub-teams that exist, not the catalog.
   const memberBySlot = new Map(board.members.map((member) => [member.slotId, member]));
-  const domainColumns: Array<{ key: string; domain: TeamMember['domain']; lead: TeamMember | null; tasks: TeamTask[] }> = [];
+  type DomainColumn = { key: string; domain: TeamMember['domain']; lead: TeamMember | null; tasks: TeamTask[] };
+  const domainColumns: DomainColumn[] = [];
   for (const domain of TEAM_DOMAIN_IDS) {
-    const next: { key: string; domain: TeamMember['domain']; lead: TeamMember | null; tasks: TeamTask[] } = {
+    const next: DomainColumn = {
       key: domain,
       domain,
       lead: board.members.find((member) => member.domain === domain && member.isDomainLead === true) ?? null,
@@ -220,7 +230,7 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
               <span style={{ color: 'var(--status-warning)' }}>{t('chat.workStatus.team.blocked')}</span>
             ) : null}
             {!showStatusIcon && task.owner ? (
-              <span className="truncate text-muted-foreground">{nameOf(task.owner)}</span>
+              <span className="truncate font-medium" style={{ color: colorOf(task.owner) ?? 'var(--muted-foreground)' }}>{nameOf(task.owner)}</span>
             ) : null}
           </div>
         ) : null}
@@ -297,7 +307,7 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
               title={chipTitle}
             >
               <Icon name={visual.icon} className="size-3.5" style={visual.color ? { color: visual.color } : undefined} />
-              <span className="max-w-40 truncate">{member.name}</span>
+              <span className="max-w-40 truncate font-medium" style={{ color: colorOf(member.slotId) ?? 'var(--foreground)' }}>{member.name}</span>
               {domainLabel ? <span className="max-w-24 truncate text-muted-foreground">{domainLabel}</span> : null}
               {member.unreadCount > 0 ? (
                 <span
@@ -350,7 +360,7 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
                             style={visual?.color ? { color: visual.color } : undefined}
                           />
                         ) : null}
-                        <span className="truncate">{columnTitle}</span>
+                        <span className="truncate" style={member ? { color: colorOf(member.slotId) } : undefined}>{columnTitle}</span>
                         <span>{tasks.length}</span>
                       </div>
                       <div className="flex flex-col gap-2">
@@ -360,13 +370,22 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
                   );
                 })
                 : domainColumns.map(({ key, domain, lead, tasks }) => {
-                  const columnTitle = domain
-                    ? [t(TEAM_DOMAIN_LABEL_KEYS[domain]), lead ? `· ${lead.name}` : null].filter(Boolean).join(' ')
-                    : t(key === 'unassigned' ? 'chat.workStatus.teamBoard.unassigned' : 'chat.workStatus.teamBoard.noDomain');
                   return (
                     <div key={key} className="flex min-w-56 flex-1 basis-0 flex-col gap-2">
                       <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                        <span className="truncate">{columnTitle}</span>
+                        {domain ? (
+                          <span className="truncate">
+                            {t(TEAM_DOMAIN_LABEL_KEYS[domain])}
+                            {lead ? (
+                              <>
+                                {' · '}
+                                <span style={{ color: colorOf(lead.slotId) }}>{lead.name}</span>
+                              </>
+                            ) : null}
+                          </span>
+                        ) : (
+                          <span className="truncate">{t(key === 'unassigned' ? 'chat.workStatus.teamBoard.unassigned' : 'chat.workStatus.teamBoard.noDomain')}</span>
+                        )}
                         <span>{tasks.length}</span>
                       </div>
                       <div className="flex flex-col gap-2">
@@ -394,6 +413,7 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory }) => {
           onOpenChange={(next) => { if (!next) setDetailTaskId(null); }}
           task={detailTask}
           nameOf={nameOf}
+          colorOf={colorOf}
           subjectOf={subjectOf}
         />
       ) : null}

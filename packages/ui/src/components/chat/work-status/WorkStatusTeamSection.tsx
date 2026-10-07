@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { useTeamBoard } from '@/hooks/useTeamBoard';
+import { useTeamMemberColors } from '@/hooks/useTeamMemberColors';
 import { fetchTeamBoards, TEAM_DOMAIN_LABEL_KEYS, type TeamMember, type TeamTask } from '@/lib/team/team-board-api';
 import { WorkStatusCollapsibleSection, WorkStatusRow, WorkStatusValue } from './WorkStatusPrimitives';
 import { useReportWorkStatusPresence } from './presenceContext';
@@ -24,7 +25,9 @@ const SECTION_ID = 'team';
 
 type MemberVisual = { icon: IconName; color?: string; labelKey: I18nKey; tone: 'info' | 'muted' | 'error' };
 
-const MEMBER_VISUALS: Record<TeamMember['status'], MemberVisual> = {
+type MemberVisuals = { [status in TeamMember['status']]: MemberVisual };
+
+const MEMBER_VISUALS: MemberVisuals = {
   busy: { icon: 'record-circle', color: 'var(--status-info)', labelKey: 'chat.workStatus.team.working', tone: 'info' },
   starting: { icon: 'record-circle', color: 'var(--status-info)', labelKey: 'chat.workStatus.team.starting', tone: 'info' },
   idle: { icon: 'time', labelKey: 'chat.workStatus.team.idle', tone: 'muted' },
@@ -39,7 +42,9 @@ const ROLE_LABEL_KEYS = {
 
 type TaskVisual = { icon: IconName; color?: string };
 
-const TASK_VISUALS: Record<TeamTask['status'], TaskVisual> = {
+type TaskVisuals = { [status in TeamTask['status']]: TaskVisual };
+
+const TASK_VISUALS: TaskVisuals = {
   in_progress: { icon: 'record-circle', color: 'var(--status-info)' },
   pending: { icon: 'time' },
   completed: { icon: 'checkbox-circle', color: 'var(--status-success)' },
@@ -47,7 +52,9 @@ const TASK_VISUALS: Record<TeamTask['status'], TaskVisual> = {
 
 // The board rows move as work happens; a stable order keeps them under the
 // pointer. Active work first, waiting behind it, finished last.
-const TASK_ORDER: Record<TeamTask['status'], number> = { in_progress: 0, pending: 1, completed: 2 };
+type TaskOrder = { [status in TeamTask['status']]: number };
+
+const TASK_ORDER: TaskOrder = { in_progress: 0, pending: 1, completed: 2 };
 
 /**
  * The team this session belongs to: roster with live status, unread mail and
@@ -57,6 +64,7 @@ const TASK_ORDER: Record<TeamTask['status'], number> = { in_progress: 0, pending
 export const WorkStatusTeamSection: React.FC<Props> = ({ sessionId, directory, fetchTeamBoards: fetcher }) => {
   const { t } = useI18n();
   const { board, loading } = useTeamBoard(sessionId, fetcher ? { fetchTeamBoards: fetcher } : {});
+  const colorOf = useTeamMemberColors(board);
   const isMobile = useUIStore((state) => state.isMobile);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
@@ -167,7 +175,9 @@ export const WorkStatusTeamSection: React.FC<Props> = ({ sessionId, directory, f
                   <Icon name={visual.icon} className="size-3.5" style={visual.color ? { color: visual.color } : undefined} />
                 </span>
               )}
-              label={member.name}
+              label={(
+                <span className="font-medium" style={{ color: colorOf(member.slotId) ?? 'var(--foreground)' }}>{member.name}</span>
+              )}
               tooltip={roleTooltip}
               value={(
                 <>
