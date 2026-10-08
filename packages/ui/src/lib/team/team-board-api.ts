@@ -53,6 +53,10 @@ const teamTaskSchema = z.object({
   // The lead's brief for the task; full text on the board's card tooltip.
   // Nullish, not required: the running server may predate the field.
   description: z.string().nullish(),
+  // The owner's final answer, attached when the task was completed; the
+  // details dialog shows it under the brief. Absent on older state and on
+  // a task the owner finished without one.
+  result: z.string().nullish(),
   status: teamTaskStatusSchema,
   // A slotId, not a display name; the board joins it to the roster client-side.
   owner: z.string().nullable(),

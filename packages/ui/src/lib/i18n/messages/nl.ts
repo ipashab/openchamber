@@ -3627,6 +3627,8 @@ export const dict = {
   'chat.workStatus.teamBoard.taskDetails.updatedAt': 'Bijgewerkt',
   'chat.workStatus.teamBoard.taskDetails.brief': 'Instructies',
   'chat.workStatus.teamBoard.taskDetails.noBrief': 'Geen instructies — het onderwerp is de hele taak',
+  'chat.workStatus.teamBoard.taskDetails.result': 'Resultaat',
+  'chat.workStatus.teamBoard.taskDetails.noResult': 'Er is geen resultaat toegevoegd bij het afronden van de taak',
   'chat.workStatus.teamBoard.pull.unknown': 'PR #{number} · onbekend',
   'chat.workStatus.teamBoard.pull.open': 'open',
   'chat.workStatus.teamBoard.pull.draft': 'concept',

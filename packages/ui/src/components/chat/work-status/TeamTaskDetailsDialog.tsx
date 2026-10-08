@@ -261,6 +261,23 @@ export const TeamTaskDetailsDialog: React.FC<Props> = ({
                 </div>
               )}
           </div>
+
+          {task.status === 'completed' ? (
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t('chat.workStatus.teamBoard.taskDetails.result')}
+              </div>
+              {task.result ? (
+                <div className="whitespace-pre-wrap break-words rounded-lg border border-border bg-[var(--surface-muted)]/40 px-2.5 py-2 text-[13px] text-foreground">
+                  {task.result}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-border px-2.5 py-2 text-[13px] text-muted-foreground">
+                  {t('chat.workStatus.teamBoard.taskDetails.noResult')}
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

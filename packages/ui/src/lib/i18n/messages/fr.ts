@@ -3626,6 +3626,8 @@ export const dict = {
   'chat.workStatus.teamBoard.taskDetails.updatedAt': 'Mise à jour',
   'chat.workStatus.teamBoard.taskDetails.brief': 'Consignes',
   'chat.workStatus.teamBoard.taskDetails.noBrief': 'Aucune consigne — le sujet résume toute la tâche',
+  'chat.workStatus.teamBoard.taskDetails.result': 'Résultat',
+  'chat.workStatus.teamBoard.taskDetails.noResult': 'La tâche a été terminée sans résultat joint',
   'chat.workStatus.teamBoard.you': 'Vous',
   'chat.workStatus.teamBoard.addTask.button': 'Ajouter une tâche',
   'chat.workStatus.teamBoard.addTask.title': 'Ajouter une tâche',

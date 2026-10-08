@@ -247,6 +247,9 @@ export const TeamBoardView: React.FC<Props> = ({ sessionId, directory, chatColum
   const describeTask = (task: TeamTask): string => [
     task.subject,
     task.description ?? undefined,
+    // The finished task carries its answer; the tooltip is the one-glance
+    // view before the click opens the full details.
+    task.status === 'completed' && task.result ? task.result : undefined,
     [t(`chat.workStatus.teamBoard.status.${task.status}`), task.owner ? nameOf(task.owner) : undefined].filter(Boolean).join(' · '),
   ].filter(Boolean).join('\n');
 

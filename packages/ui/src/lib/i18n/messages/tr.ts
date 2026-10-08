@@ -3436,6 +3436,8 @@ export const dict = {
   'chat.workStatus.teamBoard.taskDetails.updatedAt': 'Güncellendi',
   'chat.workStatus.teamBoard.taskDetails.brief': 'Talimat',
   'chat.workStatus.teamBoard.taskDetails.noBrief': 'Talimat yok — konu tüm görevi anlatıyor',
+  'chat.workStatus.teamBoard.taskDetails.result': 'Sonuç',
+  'chat.workStatus.teamBoard.taskDetails.noResult': 'Görev tamamlanırken bir sonuç eklenmedi',
   'chat.workStatus.teamBoard.pull.unknown': 'PR #{number} · bilinmiyor',
   'chat.workStatus.teamBoard.pull.open': 'açık',
   'chat.workStatus.teamBoard.pull.draft': 'taslak',

@@ -3628,6 +3628,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.workStatus.teamBoard.taskDetails.updatedAt': '更新时间',
   'chat.workStatus.teamBoard.taskDetails.brief': '任务简报',
   'chat.workStatus.teamBoard.taskDetails.noBrief': '无简报 — 标题即全部任务内容',
+  'chat.workStatus.teamBoard.taskDetails.result': '结果',
+  'chat.workStatus.teamBoard.taskDetails.noResult': '任务完成时未附带结果',
   'chat.workStatus.teamBoard.pull.unknown': 'PR #{number} · 未知',
   'chat.workStatus.teamBoard.pull.open': '开启',
   'chat.workStatus.teamBoard.pull.draft': '草稿',

@@ -212,7 +212,9 @@ ${TOOL_USAGE}
 2. If a task is assigned to you and no prerequisite blocks it, start at once:
    team.task_update it to in_progress.
 3. Do the actual work with your own tools (read, write, bash and the rest).
-4. When done, team.task_update the task to completed.
+4. When done, team.task_update the task to completed, attaching result —
+   the final answer, the conclusion the user should read. Do not paste logs
+   into it; write the answer. The board shows this text on the task's card.
 5. Report the result to the ${reportTo ? 'sub-team lead' : 'Team Lead'} slot_id (${reportLead.slotId}) with team.send_message, including
    a summary of what you did. Focus on your assignment; if you get stuck,
    message ${reportTo ? 'your sub-team lead' : 'the lead'} for guidance instead of improvising outside your scope.

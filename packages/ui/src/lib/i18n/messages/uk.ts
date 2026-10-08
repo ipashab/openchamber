@@ -3616,6 +3616,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.workStatus.teamBoard.taskDetails.updatedAt': 'Оновлено',
   'chat.workStatus.teamBoard.taskDetails.brief': 'Бриф',
   'chat.workStatus.teamBoard.taskDetails.noBrief': 'Брифа немає — суть задачі в темі',
+  'chat.workStatus.teamBoard.taskDetails.result': 'Результат',
+  'chat.workStatus.teamBoard.taskDetails.noResult': 'Під час завершення завдання результат не було додано',
   'chat.workStatus.teamBoard.pull.unknown': 'PR #{number} · невідомо',
   'chat.workStatus.teamBoard.pull.open': 'відкрито',
   'chat.workStatus.teamBoard.pull.draft': 'чернетка',

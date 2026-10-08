@@ -55,8 +55,9 @@ Lead; the session tree nests the way the reporting chain does.
 
 ### Task details and portable presets — `4fe541e`, `30bd143`, `9e58674`
 
-A card click opens the whole task — brief, owner, blockers — resolving
-ids against the live board. Presets export and import as JSON (one or an
+A card click opens the whole task — brief, owner, blockers, and, on a
+completed task, the owner's final answer attached in the same call that
+marked it done — resolving ids against the live board. Presets export and import as JSON (one or an
 array per file, per-instance fields stripped, failures reported without
 overwriting anything). A live team exports as a recipe in one click, both
 from the lead's `team.export_preset` action and from the editor. Tool

@@ -579,6 +579,53 @@ describe('createTaskFromUi', () => {
       .rejects.toMatchObject({ statusCode: 404 });
   });
 
+  it('attaches the owner\'s result at completion, clears it on reopening and caps it', async () => {
+    const { service } = await makeService();
+    const { teamId, roster } = await makeTeam(service);
+    const alice = roster[0];
+
+    const created = await service.executeAction('team.task_create', {
+      subject: 'Map the modules',
+      owner: alice.slotId,
+    }, 'ses_lead');
+    expect(created.task.result ?? undefined).toBeUndefined();
+
+    const done = await service.executeAction('team.task_update', {
+      taskId: created.task.taskId,
+      status: 'completed',
+      result: 'Mapped 12 modules; doc/maps.md now lists each owner.',
+    }, alice.sessionId);
+
+    const [afterDone] = await service.snapshot();
+    let stored = afterDone.tasks.find((entry) => entry.taskId === created.task.taskId);
+    expect(stored.result).toBe('Mapped 12 modules; doc/maps.md now lists each owner.');
+
+    // The board carries the result to the panel beside the brief.
+    const board = (await service.overview()).find((team) => team.id === teamId);
+    expect(board.tasks.find((entry) => entry.taskId === created.task.taskId).result)
+      .toBe('Mapped 12 modules; doc/maps.md now lists each owner.');
+
+    // Reopening clears the stale answer; a fresh completion attaches a fresh one.
+    await service.executeAction('team.task_update', {
+      taskId: created.task.taskId,
+      status: 'in_progress',
+    }, alice.sessionId);
+    const [afterReopen] = await service.snapshot();
+    stored = afterReopen.tasks.find((entry) => entry.taskId === created.task.taskId);
+    expect(stored.result).toBeNull();
+
+    // The cap protects the board payload from an owner pasting a log.
+    const long = 'x'.repeat(12000);
+    await service.executeAction('team.task_update', {
+      taskId: created.task.taskId,
+      status: 'completed',
+      result: long,
+    }, alice.sessionId);
+    const [afterCap] = await service.snapshot();
+    stored = afterCap.tasks.find((entry) => entry.taskId === created.task.taskId);
+    expect(stored.result).toHaveLength(8000);
+  });
+
   it('links a task to its pull request from the tool path and the dialog alike', async () => {
     const { service } = await makeService();
     const { teamId } = await makeTeam(service);

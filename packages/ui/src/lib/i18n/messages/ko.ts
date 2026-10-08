@@ -3627,6 +3627,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.workStatus.teamBoard.taskDetails.updatedAt': '갱신',
   'chat.workStatus.teamBoard.taskDetails.brief': '브리프',
   'chat.workStatus.teamBoard.taskDetails.noBrief': '브리프 없음 — 제목이 작업의 전부입니다',
+  'chat.workStatus.teamBoard.taskDetails.result': '결과',
+  'chat.workStatus.teamBoard.taskDetails.noResult': '작업 완료 시 결과가 첨부되지 않았습니다',
   'chat.workStatus.teamBoard.pull.unknown': 'PR #{number} · 알 수 없음',
   'chat.workStatus.teamBoard.pull.open': '열림',
   'chat.workStatus.teamBoard.pull.draft': '초안',

@@ -3616,6 +3616,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.workStatus.teamBoard.taskDetails.updatedAt': 'Actualizada',
   'chat.workStatus.teamBoard.taskDetails.brief': 'Instrucciones',
   'chat.workStatus.teamBoard.taskDetails.noBrief': 'Sin instrucciones — el asunto resume toda la tarea',
+  'chat.workStatus.teamBoard.taskDetails.result': 'Resultado',
+  'chat.workStatus.teamBoard.taskDetails.noResult': 'La tarea se completó sin resultado adjunto',
   'chat.workStatus.teamBoard.you': 'Tú',
   'chat.workStatus.teamBoard.addTask.button': 'Añadir tarea',
   'chat.workStatus.teamBoard.addTask.title': 'Añadir una tarea',

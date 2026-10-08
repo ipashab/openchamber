@@ -3627,6 +3627,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.workStatus.teamBoard.taskDetails.updatedAt': '更新時間',
   'chat.workStatus.teamBoard.taskDetails.brief': '任務簡報',
   'chat.workStatus.teamBoard.taskDetails.noBrief': '無簡報 — 標題即全部任務內容',
+  'chat.workStatus.teamBoard.taskDetails.result': '結果',
+  'chat.workStatus.teamBoard.taskDetails.noResult': '任務完成時未附上結果',
   'chat.workStatus.teamBoard.pull.unknown': 'PR #{number} · 未知',
   'chat.workStatus.teamBoard.pull.open': '開啟',
   'chat.workStatus.teamBoard.pull.draft': '草稿',

@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import { resolveTeamAction, isLeadOnlyTeamAction, TEAM_DOMAIN_IDS } from './tools.js';
 import { normalizeTeamPreset } from './presets.js';
 import {
@@ -32,6 +34,10 @@ const PERSIST_DEBOUNCE_MS = 250;
 const MAX_TEAMS = 50;
 const MAX_MAILBOX_PER_TEAM = 300;
 const MAX_TASKS_PER_TEAM = 500;
+// Cap for a task's stored result: the owner's final answer, written once at
+// completion. An owner dumping a whole log would bloat every board payload,
+// so the excess is cut at the boundary, same spirit as the subject cap.
+const MAX_TASK_RESULT_CHARS = 8000;
 // Feed page size: one screen of a busy team. Larger asks are clamped, not
 // honored — the feed route is read by a panel, not an exporter.
 const ACTIVITY_PAGE_DEFAULT = 50;
@@ -91,6 +97,22 @@ const parseTaskPullInput = (value) => {
   const parsed = parsePullUrl(value);
   if (!parsed) throw new TeamError('prUrl must be a GitHub pull-request URL: https://github.com/<owner>/<repo>/pull/<number>', 400);
   return parsed;
+};
+
+/**
+ * The finished task's result: the owner's final answer, stored on the task
+ * so the user reads the conclusion without opening the chat. Absent leaves
+ * the stored text alone; an empty string clears it, the same contract prUrl
+ * uses. Trimmed and capped — an owner pasting a build log must not grow the
+ * board payload without bound.
+ */
+const taskResultSchema = z.string().trim().transform((value) => value.slice(0, MAX_TASK_RESULT_CHARS));
+
+const parseTaskResultInput = (value) => {
+  if (value === undefined || value === null) return undefined;
+  const parsed = taskResultSchema.safeParse(value);
+  if (!parsed.success) throw new TeamError('result must be text', 400);
+  return parsed.data === '' ? null : parsed.data;
 };
 
 export class TeamError extends Error {
@@ -174,6 +196,7 @@ const serializeTeam = (team) => ({
     taskId: task.taskId,
     subject: task.subject,
     description: task.description ?? null,
+    result: task.result ?? null,
     status: task.status,
     owner: task.owner ?? null,
     blockedBy: asList(task.blockedBy),
@@ -1314,6 +1337,7 @@ export const createTeamService = (dependencies) => {
       taskId: shortId('task'),
       subject: subject.slice(0, 200),
       description: asNonEmptyString(input?.description) || null,
+      result: null,
       status: 'pending',
       owner: owner || null,
       blockedBy: [],
@@ -1410,6 +1434,7 @@ export const createTeamService = (dependencies) => {
       taskId: shortId('task'),
       subject: subject.slice(0, 200),
       description: asNonEmptyString(input.description) || null,
+      result: null,
       status: 'pending',
       owner: owner || null,
       blockedBy,
@@ -1463,6 +1488,13 @@ export const createTeamService = (dependencies) => {
     if (status) task.status = status;
     const pull = parseTaskPullInput(input.prUrl);
     if (pull !== undefined) task.pull = pull;
+    // The result is the answer of a *finished* task: only a completed task
+    // carries one. Reopening clears the stale answer — a fresh completion
+    // attaches a fresh one, so the board never shows a result the task's
+    // current status already contradicts.
+    if (status && status !== 'completed') task.result = null;
+    const result = parseTaskResultInput(input.result);
+    if (result !== undefined) task.result = result;
     task.updatedAt = now();
     // A teammate finishing its own task is a deliverable even when it forgets
     // the report message: the member's turn end notifies the lead either way.
@@ -1805,6 +1837,10 @@ export const createTeamService = (dependencies) => {
               // The board's card tooltip reads the brief; older clients
               // without the field keep working because they only parse.
               description: task.description ?? null,
+              // The owner's final answer, attached at completion; the
+              // details dialog reads it, the card carries a snippet. Nullish
+              // on older state.
+              result: task.result ?? null,
               status: task.status,
               owner: task.owner,
               blockedBy: asList(task.blockedBy),

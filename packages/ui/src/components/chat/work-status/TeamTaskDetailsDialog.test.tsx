@@ -111,4 +111,26 @@ describe('TeamTaskDetailsDialog', () => {
     expect(markup).toContain('Not linked to a PR yet');
     expect(markup).toContain('Link a PR');
   });
+
+  test('a completed task shows the attached result', () => {
+    const doneTask: TeamTask = {
+      ...fullTask,
+      status: 'completed',
+      result: 'Mapped 12 modules; doc/maps.md now lists each owner.',
+    };
+    const markup = markupFor(doneTask);
+
+    expect(markup).toContain('Result');
+    expect(markup).toContain('Mapped 12 modules; doc/maps.md now lists each owner.');
+  });
+
+  test('a completed task without a result says so; an unfinished task has no result row', () => {
+    const doneBare: TeamTask = { ...bareTask, status: 'completed' };
+    expect(markupFor(doneBare)).toContain('No result was attached when the task was completed');
+    // The in_progress fixture carries a result the row must not show —
+    // the section belongs to a finished task.
+    const unfinishedWithStaleResult: TeamTask = { ...fullTask, result: 'stale answer' };
+    expect(markupFor(unfinishedWithStaleResult)).not.toContain('Result');
+    expect(markupFor(bareTask)).not.toContain('Result');
+  });
 });

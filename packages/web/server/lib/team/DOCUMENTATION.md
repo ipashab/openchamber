@@ -79,6 +79,12 @@ brief and tool allowances — as the preset JSON the shelf round-trips.
   `task_assignment` message into the owner's mailbox and wakes it; the wake
   prompt carries the subject and the description. A `send_message` on top of
   an assignment is noise.
+- **A finished task carries its answer.** The owner marks its own task
+  `completed` with the optional `result` parameter — the final answer, the
+  conclusion the user should read, capped at 8000 chars. The result lives on
+  the task (the board's details dialog shows it), and reopening the task
+  clears it: a fresh completion attaches a fresh answer, so the board never
+  shows a result the task's status contradicts.
 - **Idle notifications.** A teammate that finishes a turn with something for
   the lead (a report, a completed own task) drops an `idle_notification` into
   the lead's mailbox and wakes the lead to synthesize.
