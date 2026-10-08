@@ -132,11 +132,13 @@ summary and the old one stays in the list as the archive.
 
 A **Goals** page in the sidebar. A mission is a goal prompt plus a
 mode — a fresh session that receives it, or a lead-led team whose
-first task it is. The executor paces the file: two lanes at a time,
-the rest queued in creation order, each turn observed and marked
-completed when it goes idle after busy; the watch ends after an hour no
-matter what, so no session wedges the queue. State survives restarts;
-the list hears every state move as an event frame and refetches.
+first task it is. The executor paces the file: the lane count and the
+watch window are the user's settings on the page (default two lanes,
+60 minutes), the rest queued in creation order, each turn observed and
+marked completed when it goes idle after busy; the watch ends after the
+window no matter what, so no session wedges the queue. State survives
+restarts, config included; the list hears every state move as an event
+frame and refetches.
 
 ### Contacts: saved personas with one continuing chat — `2e95232c9`
 

@@ -6,15 +6,20 @@ import { z } from 'zod';
  * A mission is one goal in one lane of its own — a fresh session that
  * receives the prompt (mode 'session') or a lead-led team whose first task is
  * the prompt (mode 'team'). The user files several at once and watches from
- * the list; the executor is the one that paces them: a small number of
- * missions run at a time (maxConcurrent), the rest wait as 'queued'.
+ * the list; the executor is the one that paces them: as many missions run at
+ * a time as the queue config allows (maxConcurrent, default 2), the rest
+ * wait as 'queued'. The config is the user's to set and lives beside the
+ * missions in the state file.
  *
  * Completion is watched, not assumed: after the prompt is dispatched the
  * executor observes the session's busy/idle state and marks the mission
  * 'completed' when the turn it started goes idle. The watch ends after
  * maxRunMs no matter what — a turn that never reported busy was failed far
  * sooner, and a turn longer than the window is released as completed, so
- * no session can hold the queue hostage.
+ * no session can hold the queue hostage. maxRunMs is part of the queue
+ * config; a change arms new watches with the new window and leaves running
+ * ones on the window they were armed with — re-arming would forget the
+ * seen-busy phase and fail a mission finishing right now.
  *
  * State persists to missions.json beside teams.json and survives restarts:
  * queued missions resume draining, a running mission that was mid-turn when
@@ -28,6 +33,11 @@ const MAX_MISSIONS = 200;
 const POLL_INTERVAL_MS = 5_000;
 const DEFAULT_MAX_CONCURRENT = 2;
 const DEFAULT_MAX_RUN_MS = 60 * 60 * 1000;
+// The queue config is a user setting, not a free-for-all: a lane count past
+// sixteen is a fleet the user cannot watch, a window past a day is no window.
+const MAX_CONCURRENT_LIMIT = 16;
+const MIN_RUN_MS = 60 * 1000;
+const MAX_RUN_MS = 24 * 60 * 60 * 1000;
 
 const MISSION_STATUSES = new Set(['queued', 'running', 'completed', 'failed', 'cancelled']);
 
@@ -51,6 +61,12 @@ const missionPromptSchema = z.string().trim().min(1).max(50_000);
 const missionModeSchema = z.enum(['session', 'team']);
 const missionModelSchema = z.string().trim().regex(/^[^/]+\/[^/]+$/);
 const missionAgentSchema = z.string().trim().min(1).max(120);
+const missionConcurrencySchema = z.number().int().min(1).max(MAX_CONCURRENT_LIMIT);
+const missionRunMsSchema = z.number().int().min(MIN_RUN_MS).max(MAX_RUN_MS);
+const storedConfigSchema = z.object({
+  maxConcurrent: missionConcurrencySchema,
+  maxRunMs: missionRunMsSchema,
+}).partial();
 
 /**
  * The create input parses at this boundary; everything past it works with
@@ -86,6 +102,46 @@ const parseCreateInput = (input) => {
     model,
     agent: agentValid,
   };
+};
+
+/**
+ * The queue config parses at this boundary, one field at a time: every
+ * rejected value names the field and the bounds the settings form shows.
+ */
+const parseConfigInput = (input) => {
+  const next = {};
+  const inputErrors = [];
+  if (input?.maxConcurrent !== undefined) {
+    const parsed = missionConcurrencySchema.safeParse(input.maxConcurrent);
+    if (parsed.success) {
+      next.maxConcurrent = parsed.data;
+    } else {
+      inputErrors.push(`maxConcurrent must be a whole number between 1 and ${MAX_CONCURRENT_LIMIT}`);
+    }
+  }
+  if (input?.maxRunMs !== undefined) {
+    const parsed = missionRunMsSchema.safeParse(input.maxRunMs);
+    if (parsed.success) {
+      next.maxRunMs = parsed.data;
+    } else {
+      const minutes = Math.round(MIN_RUN_MS / 60_000);
+      const hours = Math.round(MAX_RUN_MS / 60_000) / 60;
+      inputErrors.push(`maxRunMs must be a whole number of milliseconds between ${MIN_RUN_MS} (${minutes} minute) and ${MAX_RUN_MS} (${hours} hours)`);
+    }
+  }
+  if (Object.keys(next).length === 0 && inputErrors.length === 0) {
+    inputErrors.push('maxConcurrent or maxRunMs is required');
+  }
+  if (inputErrors.length > 0) throw new MissionError(inputErrors.join('; '), 400);
+  return next;
+};
+
+/** A config read off disk keeps only valid fields; the rest fall back. */
+const parseStoredConfig = (stored) => {
+  const config = { maxConcurrent: DEFAULT_MAX_CONCURRENT, maxRunMs: DEFAULT_MAX_RUN_MS };
+  const parsed = storedConfigSchema.safeParse(stored);
+  if (parsed.success) Object.assign(config, parsed.data);
+  return config;
 };
 
 export const createMissionsService = (dependencies) => {
@@ -125,6 +181,9 @@ export const createMissionsService = (dependencies) => {
 
   /** @type {Array<object>} */
   let missions = [];
+  // The queue's own settings. The injected values are the starting point for
+  // tests and fresh installs; the last saved config replaces them on load.
+  const config = { maxConcurrent, maxRunMs };
   let loaded = false;
   let loadPromise = null;
   let persistTimer = null;
@@ -145,7 +204,7 @@ export const createMissionsService = (dependencies) => {
   };
 
   const persist = async () => {
-    const payload = JSON.stringify({ missions }, null, 2);
+    const payload = JSON.stringify({ config, missions }, null, 2);
     await fsPromises.mkdir(path.dirname(stateFilePath), { recursive: true });
     const temporary = `${stateFilePath}.tmp`;
     await fsPromises.writeFile(temporary, payload, 'utf8');
@@ -173,6 +232,7 @@ export const createMissionsService = (dependencies) => {
             status: MISSION_STATUSES.has(mission.status) ? mission.status : 'failed',
           }));
         }
+        Object.assign(config, parseStoredConfig(parsed?.config));
       } catch (error) {
         if (error?.code !== 'ENOENT') {
           console.warn('[missions] could not read state:', error?.message ?? error);
@@ -278,7 +338,7 @@ export const createMissionsService = (dependencies) => {
         return;
       }
       settleMission(mission, 'failed', { error: 'The session never reported a running turn within the mission watch window' });
-    }, Math.max(1, maxRunMs)));
+    }, Math.max(1, config.maxRunMs)));
   };
 
   const spawnSessionMission = async (mission) => {
@@ -353,9 +413,11 @@ export const createMissionsService = (dependencies) => {
 
   const drainQueue = () => {
     // Within one synchronous pass the queue order is creation order; a slot
-    // freed by a settled mission admits the oldest queued mission.
+    // freed by a settled mission admits the oldest queued mission. The
+    // limit is read live, so a config change drains (or stops admitting)
+    // on the same pass.
     for (const mission of missions) {
-      if (claimedSlots.size >= maxConcurrent) return;
+      if (claimedSlots.size >= config.maxConcurrent) return;
       if (mission.status !== 'queued') continue;
       void runMission(mission);
     }
@@ -387,6 +449,28 @@ export const createMissionsService = (dependencies) => {
     await load();
     // Newest first: the list's own order is what the panel shows.
     return missions.map(serializeMission).reverse();
+  };
+
+  const getMissionConfig = async () => {
+    await load();
+    return { ...config };
+  };
+
+  /**
+   * The queue's settings: how many lanes run at once and how long a watch
+   * waits. A new maxConcurrent admits queued missions on the same pass; a
+   * lower one only stops admissions — running missions are not cancelled.
+   * A new maxRunMs arms the watches started after it; running watches keep
+   * the window they were armed with.
+   */
+  const updateMissionConfig = async (input) => {
+    await load();
+    const next = parseConfigInput(input);
+    Object.assign(config, next);
+    schedulePersist();
+    broadcast('config', null);
+    drainQueue();
+    return { config: { ...config } };
   };
 
   const cancelMission = async (missionId) => {
@@ -443,6 +527,8 @@ export const createMissionsService = (dependencies) => {
     init,
     createMission,
     listMissions,
+    getMissionConfig,
+    updateMissionConfig,
     cancelMission,
     retryMission,
     deleteMission,

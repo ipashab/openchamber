@@ -290,6 +290,91 @@ describe('createMissionsService', () => {
     expect(await service.listMissions()).toHaveLength(0);
   });
 
+  it('reads the queue config and updates it with bounds-checked values', async () => {
+    const { service } = makeService({ maxConcurrent: 1, maxRunMs: 30 * 60 * 1000 });
+    expect(await service.getMissionConfig()).toEqual({ maxConcurrent: 1, maxRunMs: 30 * 60 * 1000 });
+
+    const updated = await service.updateMissionConfig({ maxConcurrent: 4, maxRunMs: 5 * 60 * 1000 });
+    expect(updated.config).toEqual({ maxConcurrent: 4, maxRunMs: 5 * 60 * 1000 });
+    expect(await service.getMissionConfig()).toEqual({ maxConcurrent: 4, maxRunMs: 5 * 60 * 1000 });
+
+    // One field at a time: the other keeps its value.
+    const partial = await service.updateMissionConfig({ maxRunMs: 2 * 60 * 60 * 1000 });
+    expect(partial.config.maxConcurrent).toBe(4);
+
+    await expect(service.updateMissionConfig({ maxConcurrent: 0 })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.updateMissionConfig({ maxConcurrent: 17 })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.updateMissionConfig({ maxRunMs: 30 * 1000 })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.updateMissionConfig({})).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.updateMissionConfig({ maxConcurrent: 'two' })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it('a raised lane count starts queued missions on the same pass', async () => {
+    const { service, sessionsCreated } = makeService({ maxConcurrent: 1 });
+    await service.createMission(input);
+    await service.createMission({ ...input, title: 'Second' });
+    await service.createMission({ ...input, title: 'Third' });
+    await flushAsync();
+    expect(sessionsCreated).toHaveLength(1);
+
+    await service.updateMissionConfig({ maxConcurrent: 3 });
+    await flushAsync();
+    const list = await service.listMissions();
+    expect(list.filter((mission) => mission.status === 'running')).toHaveLength(3);
+
+    // A lowered limit stops admissions; running missions are not cancelled.
+    await service.updateMissionConfig({ maxConcurrent: 1 });
+    await flushAsync();
+    expect(list.filter((mission) => mission.status === 'running')).toHaveLength(3);
+    const fourth = await service.createMission({ ...input, title: 'Fourth' });
+    await flushAsync();
+    expect(fourth.mission.status).toBe('queued');
+  });
+
+  it('persists the queue config beside the missions and restores it', async () => {
+    const base = makeService({ maxConcurrent: 2 });
+    await base.service.createMission(input);
+    await base.service.updateMissionConfig({ maxConcurrent: 6, maxRunMs: 90 * 60 * 1000 });
+    await vi.advanceTimersByTimeAsync(700);
+    const raw = JSON.parse(base.fs.files.get('/data/missions.json'));
+    expect(raw.config).toEqual({ maxConcurrent: 6, maxRunMs: 90 * 60 * 1000 });
+
+    const revived = createMissionsService({
+      fsPromises: base.fs.promises,
+      path: PATH,
+      dataDir: '/data',
+      buildOpenCodeUrl: (suffix) => `http://opencode${suffix}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => {},
+      createOpenCodeClient: () => ({ session: { create: vi.fn(async () => ({ id: 'ses_new' })) } }),
+      sessionService: { send: vi.fn(async () => {}) },
+      teamService: { createFromUi: vi.fn(async () => ({ team: { id: 'team_2' }, leadSessionId: 'ses_new2' })) },
+      getSessionState: () => null,
+      broadcastUiEvent: () => {},
+    });
+    await revived.init();
+    expect(await revived.getMissionConfig()).toEqual({ maxConcurrent: 6, maxRunMs: 90 * 60 * 1000 });
+
+    // A config from an older or corrupt file falls back to the bounds-safe
+    // defaults rather than refusing to boot.
+    base.fs.files.set('/data/missions.json', JSON.stringify({ missions: [], config: { maxConcurrent: 'many' } }));
+    const tolerant = createMissionsService({
+      fsPromises: base.fs.promises,
+      path: PATH,
+      dataDir: '/data',
+      buildOpenCodeUrl: (suffix) => `http://opencode${suffix}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => {},
+      createOpenCodeClient: () => ({ session: { create: vi.fn(async () => ({ id: 'ses_new' })) } }),
+      sessionService: { send: vi.fn(async () => {}) },
+      teamService: { createFromUi: vi.fn(async () => ({ team: { id: 'team_2' }, leadSessionId: 'ses_new2' })) },
+      getSessionState: () => null,
+      broadcastUiEvent: () => {},
+    });
+    await tolerant.init();
+    expect((await tolerant.getMissionConfig()).maxConcurrent).toBe(2);
+  });
+
   it('survives a restart: queued missions drain, running ones keep their watch', async () => {
     const base = makeService({ maxConcurrent: 1 });
     await base.service.createMission(input);

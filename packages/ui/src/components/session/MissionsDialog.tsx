@@ -20,7 +20,10 @@ import {
   deleteMission,
   fetchMissions,
   retryMission,
+  MISSION_CONFIG_BOUNDS,
+  updateMissionConfig,
   type Mission,
+  type MissionConfig,
   type MissionMode,
   type MissionStatus,
 } from '@/lib/missions/missions-api';
@@ -69,6 +72,15 @@ function MissionsView({ onLeave }: { onLeave: () => void }) {
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [formOpen, setFormOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+  // The queue's settings card: drafts are strings so the typing experience
+  // is the input's own, converted at save time with the bounds checked here
+  // and again on the server.
+  const [config, setConfig] = React.useState<MissionConfig | null>(null);
+  const [configOpen, setConfigOpen] = React.useState(false);
+  const [concurrencyDraft, setConcurrencyDraft] = React.useState('2');
+  const [windowDraft, setWindowDraft] = React.useState('60');
+  const [configError, setConfigError] = React.useState<string | null>(null);
+  const [savingConfig, setSavingConfig] = React.useState(false);
 
   // The new-goal draft. The mode defaults to a lone session — a team is a
   // deliberate upgrade the user opts into per goal.
@@ -83,7 +95,14 @@ function MissionsView({ onLeave }: { onLeave: () => void }) {
   const reload = React.useCallback(async () => {
     try {
       const next = await fetchMissions();
-      setMissions(next);
+      setMissions(next.missions);
+      setConfig(next.config);
+      // Drafts follow the server's config only while the card is closed;
+      // an open card is the user's edit, not the server's echo.
+      if (!configOpenRef.current) {
+        setConcurrencyDraft(String(next.config.maxConcurrent));
+        setWindowDraft(String(Math.round(next.config.maxRunMs / 60_000)));
+      }
       setLoadError(null);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : String(error));
@@ -91,6 +110,11 @@ function MissionsView({ onLeave }: { onLeave: () => void }) {
       setLoading(false);
     }
   }, []);
+
+  const configOpenRef = React.useRef(false);
+  React.useEffect(() => {
+    configOpenRef.current = configOpen;
+  }, [configOpen]);
 
   reloadRef.current = reload;
 
@@ -190,6 +214,36 @@ function MissionsView({ onLeave }: { onLeave: () => void }) {
     }
   }, [reload, t]);
 
+  const handleSaveConfig = React.useCallback(async () => {
+    const concurrency = Number.parseInt(concurrencyDraft, 10);
+    const minutes = Number.parseInt(windowDraft, 10);
+    const { maxConcurrent, windowMinutes } = MISSION_CONFIG_BOUNDS;
+    if (!Number.isInteger(concurrency) || concurrency < maxConcurrent.min || concurrency > maxConcurrent.max) {
+      setConfigError(t('sessions.missions.settings.concurrency.invalid'));
+      return;
+    }
+    if (!Number.isInteger(minutes) || minutes < windowMinutes.min || minutes > windowMinutes.max) {
+      setConfigError(t('sessions.missions.settings.window.invalid'));
+      return;
+    }
+    setSavingConfig(true);
+    setConfigError(null);
+    try {
+      const saved = await updateMissionConfig({
+        maxConcurrent: concurrency,
+        maxRunMs: minutes * 60_000,
+      });
+      setConfig(saved);
+      toast.success(t('sessions.missions.toast.configSaved'));
+      setConfigOpen(false);
+      await reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('sessions.missions.toast.configFailed'));
+    } finally {
+      setSavingConfig(false);
+    }
+  }, [concurrencyDraft, windowDraft, reload, t]);
+
   const form = formOpen ? (
     <div className="rounded-lg border border-border/70 bg-card p-4">
       <div className="space-y-3">
@@ -264,6 +318,56 @@ function MissionsView({ onLeave }: { onLeave: () => void }) {
           </Button>
           <Button size="sm" onClick={() => void handleSubmit()} disabled={submitting}>
             {t('sessions.missions.form.submit')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  const configCard = configOpen ? (
+    <div className="rounded-lg border border-border/70 bg-card p-4">
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <label className="typography-micro font-medium" htmlFor="mission-concurrency">
+            {t('sessions.missions.settings.concurrency.label')}
+          </label>
+          <Input
+            id="mission-concurrency"
+            type="number"
+            inputMode="numeric"
+            min={MISSION_CONFIG_BOUNDS.maxConcurrent.min}
+            max={MISSION_CONFIG_BOUNDS.maxConcurrent.max}
+            step={1}
+            value={concurrencyDraft}
+            onChange={(event) => setConcurrencyDraft(event.target.value)}
+          />
+          <p className="typography-micro text-muted-foreground">{t('sessions.missions.settings.concurrency.hint')}</p>
+        </div>
+        <div className="space-y-1.5">
+          <label className="typography-micro font-medium" htmlFor="mission-window">
+            {t('sessions.missions.settings.window.label')}
+          </label>
+          <Input
+            id="mission-window"
+            type="number"
+            inputMode="numeric"
+            min={MISSION_CONFIG_BOUNDS.windowMinutes.min}
+            max={MISSION_CONFIG_BOUNDS.windowMinutes.max}
+            step={1}
+            value={windowDraft}
+            onChange={(event) => setWindowDraft(event.target.value)}
+          />
+          <p className="typography-micro text-muted-foreground">{t('sessions.missions.settings.window.hint')}</p>
+        </div>
+        {configError ? (
+          <p className="typography-micro" style={{ color: 'var(--status-error)' }}>{configError}</p>
+        ) : null}
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={() => setConfigOpen(false)}>
+            {t('sessions.missions.form.cancel')}
+          </Button>
+          <Button size="sm" onClick={() => void handleSaveConfig()} disabled={savingConfig || config === null}>
+            {t('sessions.missions.settings.save')}
           </Button>
         </div>
       </div>
@@ -346,12 +450,24 @@ function MissionsView({ onLeave }: { onLeave: () => void }) {
     <div className="absolute inset-0 z-10 flex flex-col bg-background">
       <div className="flex items-center justify-between px-6 pt-3">
         <p className="typography-meta text-muted-foreground">{t('sessions.missions.description')}</p>
-        <Button size="sm" onClick={() => setFormOpen((open) => !open)} disabled={projects.length === 0}>
-          <Icon name="add" className="h-4 w-4" /> {t('sessions.missions.new.button')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label={t('sessions.missions.settings.open')}
+            aria-pressed={configOpen}
+            onClick={() => setConfigOpen((open) => !open)}
+          >
+            <Icon name="settings-3" className="h-4 w-4" />
+          </Button>
+          <Button size="sm" onClick={() => setFormOpen((open) => !open)} disabled={projects.length === 0}>
+            <Icon name="add" className="h-4 w-4" /> {t('sessions.missions.new.button')}
+          </Button>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         <div className="mx-auto w-full max-w-3xl space-y-4">
+          {configCard}
           {form}
           {listBody}
         </div>

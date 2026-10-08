@@ -1,8 +1,9 @@
 # Missions
 
 A mission is one goal prompt the user files and walks away from. The queue
-paces them: a small number run at a time (`maxConcurrent`, default 2), the
-rest wait as `queued`. Each mission works in a lane of its own:
+paces them: as many run at a time as the queue config allows
+(`config.maxConcurrent`, default 2), the rest wait as `queued`. Each mission
+works in a lane of its own:
 
 - **session** — a fresh OpenCode session is created and receives the prompt;
 - **team** — a lead-only team is created (`createFromUi`), the prompt is the
@@ -19,9 +20,24 @@ it.
 Completion is watched, not assumed. After dispatch the executor polls the
 shared session-state probe (`getSessionState`): the turn its prompt started
 goes busy, then idle — `idle` before any `busy` is waiting, not finishing.
-The whole watch ends after `maxRunMs` (default 60 min): a turn that never
-reported busy is failed, a turn still busy is released as completed, so no
-session can hold the queue hostage.
+The whole watch ends after `config.maxRunMs` (default 60 min): a turn that
+never reported busy is failed, a turn still busy is released as completed, so
+no session can hold the queue hostage.
+
+## Queue config
+
+The user's settings, both persisted in `missions.json` under `config` beside
+the missions and restored on load (invalid stored values fall back to the
+defaults):
+
+- `maxConcurrent` — lanes, a whole number 1..16, default 2. A raised value
+  admits queued missions on the same drain pass; a lowered one only stops
+  admissions — running missions are not cancelled.
+- `maxRunMs` — the watch window, whole minutes 1..1440 on the form
+  (milliseconds on the wire and on disk), default 60. A change arms the
+  watches started after it; running watches keep the window they were armed
+  with — re-arming would forget the seen-busy phase of a turn finishing
+  right now.
 
 ## State
 
@@ -38,15 +54,16 @@ with `{ error }` in the routes' own words.
 
 | Route | Meaning |
 | --- | --- |
-| `GET /` | The whole list, newest first |
+| `GET /` | The whole list, newest first, with the queue config |
 | `POST /` | File a mission: `{ title, prompt, mode, directory, model?, agent? }` |
+| `PUT /config` | Save queue settings: `{ maxConcurrent?, maxRunMs? }` — one field is enough |
 | `POST /:id/cancel` | Drop a queued one or stop watching a running one |
 | `POST /:id/retry` | Requeue a finished one as a fresh run of the same goal |
 | `DELETE /:id` | Forget the record; a running session is unwatched, not stopped |
 
 Every state move broadcasts `openchamber:mission-changed`
 (`{ change, missionId }`); the panel refetches on the frame, like the team
-panel does.
+panel does. A config save broadcasts `change: 'config'`.
 
 ## Not in v1
 

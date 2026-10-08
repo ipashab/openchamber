@@ -40,7 +40,7 @@ const findRoute = (app, method, routePath) => {
 };
 
 describe('registerMissionsRoutes', () => {
-  it('registers the five mission resources', () => {
+  it('registers the six mission resources', () => {
     const app = makeApp();
     registerMissionsRoutes(app, { missionsService: {} });
     const paths = [...app.routes.keys()].sort();
@@ -50,6 +50,7 @@ describe('registerMissionsRoutes', () => {
       'POST /api/openchamber/missions',
       'POST /api/openchamber/missions/:missionId/cancel',
       'POST /api/openchamber/missions/:missionId/retry',
+      'PUT /api/openchamber/missions/config',
     ]);
   });
 
@@ -57,10 +58,12 @@ describe('registerMissionsRoutes', () => {
     expect(() => registerMissionsRoutes(makeApp(), {})).toThrow('missions service');
   });
 
-  it('serves the list and passes write failures through with their status', async () => {
+  it('serves the list with the queue config and passes write failures through with their status', async () => {
     const app = makeApp();
     const missionsService = {
       listMissions: vi.fn(async () => [{ missionId: 'mission_1', status: 'running' }]),
+      getMissionConfig: vi.fn(async () => ({ maxConcurrent: 2, maxRunMs: 3_600_000 })),
+      updateMissionConfig: vi.fn(async (input) => ({ config: { maxConcurrent: 2, maxRunMs: 3_600_000, ...input } })),
       createMission: vi.fn(async (input) => ({ mission: { missionId: 'mission_2', status: 'queued', ...input } })),
       cancelMission: vi.fn(async () => { throw Object.assign(new Error('A completed mission cannot be cancelled'), { statusCode: 400 }); }),
     };
@@ -70,6 +73,19 @@ describe('registerMissionsRoutes', () => {
     await findRoute(app, 'GET', '/api/openchamber/missions').handler(undefined, list);
     expect(list.statusCode).toBeNull();
     expect(list.body.missions[0].missionId).toBe('mission_1');
+    expect(list.body.config).toEqual({ maxConcurrent: 2, maxRunMs: 3_600_000 });
+
+    const savedConfig = makeRes();
+    await findRoute(app, 'PUT', '/api/openchamber/missions/config').handler({ body: { maxConcurrent: 6 } }, savedConfig);
+    expect(savedConfig.statusCode).toBeNull();
+    expect(savedConfig.body.config).toEqual({ maxConcurrent: 6, maxRunMs: 3_600_000 });
+
+    const badConfig = makeRes();
+    const rangeError = Object.assign(new Error('maxConcurrent must be a whole number between 1 and 16'), { statusCode: 400 });
+    missionsService.updateMissionConfig.mockImplementation(async () => { throw rangeError; });
+    await findRoute(app, 'PUT', '/api/openchamber/missions/config').handler({ body: { maxConcurrent: 0 } }, badConfig);
+    expect(badConfig.statusCode).toBe(400);
+    expect(badConfig.body.error).toContain('whole number');
 
     const created = makeRes();
     await findRoute(app, 'POST', '/api/openchamber/missions').handler({ body: { title: 'T', prompt: 'P', directory: '/d' } }, created);

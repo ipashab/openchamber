@@ -2,7 +2,8 @@
  * Missions routes for the client: the goal list the user files prompts into
  * and watches from. The list reads one fetch, refreshed by
  * `openchamber:mission-changed` events on the UI event stream; writes are
- * file, cancel, retry and delete — the queue itself is the service's.
+ * file, cancel, retry, delete and queue settings — the queue itself is the
+ * service's.
  */
 
 import express from 'express';
@@ -18,13 +19,28 @@ export const registerMissionsRoutes = (app, dependencies) => {
   if (!missionsService) throw new Error('mission routes need a missions service');
 
   // One payload for every mission, newest first — same shape the panel lists.
+  // The queue config rides along: the settings card and the list are one page.
   app.get('/api/openchamber/missions', async (_req, res) => {
     try {
       const missions = await missionsService.listMissions();
-      return res.json({ missions });
+      const config = await missionsService.getMissionConfig();
+      return res.json({ missions, config });
     } catch (error) {
       console.error('[missions] failed to list missions:', error?.message ?? error);
       return res.status(500).json({ error: 'Failed to load missions' });
+    }
+  });
+
+  // The queue's settings: how many goals run at once and how long each watch
+  // waits. Validation errors answer with the reasons the settings form shows.
+  app.put('/api/openchamber/missions/config', jsonBody, async (req, res) => {
+    try {
+      const result = await missionsService.updateMissionConfig(req.body ?? {});
+      return res.json(result);
+    } catch (error) {
+      const status = errorStatus(error);
+      if (status >= 500) console.error('[missions] failed to update config:', error?.message ?? error);
+      return res.status(status).json({ error: error?.message ?? 'Failed to update the queue settings' });
     }
   });
 

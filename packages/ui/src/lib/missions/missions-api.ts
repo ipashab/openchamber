@@ -38,6 +38,25 @@ export type MissionStatus = z.infer<typeof missionStatusSchema>;export const mis
 });
 export type Mission = z.infer<typeof missionSchema>;
 
+// The queue's own settings: how many goals run at once and how long each
+// watch waits. Same bounds the server enforces; the form validates first so
+// the range in the hint is what the user can actually type.
+const missionConfigSchema = z.object({
+  maxConcurrent: z.number().int().min(1).max(16),
+  maxRunMs: z.number().int().min(60 * 1000).max(24 * 60 * 60 * 1000),
+});
+export type MissionConfig = z.infer<typeof missionConfigSchema>;
+
+export const MISSION_CONFIG_BOUNDS = {
+  maxConcurrent: { min: 1, max: 16 },
+  windowMinutes: { min: Math.round((60 * 1000) / 60_000), max: Math.round((24 * 60 * 60 * 1000) / 60_000) },
+} as const;
+
+export type MissionConfigInput = {
+  maxConcurrent?: number;
+  maxRunMs?: number;
+};
+
 export type MissionCreateInput = {
   title: string;
   prompt: string;
@@ -55,18 +74,41 @@ const readRouteError = async (response: Response, fallback: string): Promise<str
   return parsed.success ? parsed.data.error : `${fallback}: ${response.status}`;
 };
 
-/** The whole list, newest first — same order the server sends. */
-export const fetchMissions = async (fetchImpl: typeof runtimeFetch = runtimeFetch): Promise<Mission[]> => {
+/** The whole list with the queue settings, newest first — same order the server sends. */
+export const fetchMissions = async (
+  fetchImpl: typeof runtimeFetch = runtimeFetch,
+): Promise<{ missions: Mission[]; config: MissionConfig }> => {
   const response = await fetchImpl(MISSIONS_ROUTE, { headers: { accept: 'application/json' } });
   if (!response.ok) {
     throw new Error(await readRouteError(response, 'Missions request failed'));
   }
   const body = await response.json().catch(() => null);
-  const parsed = z.object({ missions: z.array(missionSchema) }).safeParse(body);
+  const parsed = z.object({ missions: z.array(missionSchema), config: missionConfigSchema }).safeParse(body);
   if (!parsed.success) {
     throw new Error('Missions response did not match the expected shape');
   }
-  return parsed.data.missions;
+  return parsed.data;
+};
+
+/** Save the queue settings; the answer is the config the server kept. */
+export const updateMissionConfig = async (
+  input: MissionConfigInput,
+  fetchImpl: typeof runtimeFetch = runtimeFetch,
+): Promise<MissionConfig> => {
+  const response = await fetchImpl(`${MISSIONS_ROUTE}/config`, {
+    method: 'PUT',
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(await readRouteError(response, 'Mission settings update failed'));
+  }
+  const body = await response.json().catch(() => null);
+  const parsed = z.object({ config: missionConfigSchema }).safeParse(body);
+  if (!parsed.success) {
+    throw new Error('Mission settings response did not match the expected shape');
+  }
+  return parsed.data.config;
 };
 
 /** File a new goal; the answer is the queued mission the list will show. */
