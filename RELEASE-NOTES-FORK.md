@@ -64,9 +64,12 @@ A **Goals** page in the sidebar. File a goal prompt, pick a mode — a fresh
 **session** that receives it, or a lead-led **team** whose first task it
 is — and walk away.
 
-- The executor paces the file: two lanes at a time, the rest queued.
+- The executor paces the file: the lane count and the watch window are
+  the user's settings on the page (default two lanes, 60 minutes); the
+  rest queued.
 - Each mission's turn is observed and marked completed when it goes idle
-  after busy; the watch ends after an hour, so nothing wedges the queue.
+  after busy; the watch ends after the window no matter what, so nothing
+  wedges the queue.
 - Retry, cancel, delete from the list; jump into the working session.
 - State survives restarts; every state move is an event frame the page
   refetches on.
