@@ -14,7 +14,7 @@ assistant personas each keeping one continuing chat.
 Fork base: upstream `733fa61` (2026-10-07, upstream version `2.2.0`).
 Everything after it is this fork's work; upstream merges cleanly
 underneath. The fork keeps upstream's version and adds a prerelease
-marker: `2.2.0-fork1`.
+marker, `forkN`, bumping on each fork patch: currently `2.2.0-fork2`.
 
 Owning docs that move with the code:
 

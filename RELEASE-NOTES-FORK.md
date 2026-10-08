@@ -1,16 +1,30 @@
-# OpenChamber fork `2.2.0-fork1` — team operations on top of upstream
+# OpenChamber fork `2.2.0-fork2` — team operations on top of upstream
 
 **Base:** upstream `openchamber/openchamber` @ `733fa61` (2026-10-07), which is
-upstream `2.2.0`. The fork adds a `fork1` prerelease marker to that version
-and never moves ahead of upstream on its own: the next rebase renumbers to
-`<new upstream>-fork1`.
-**Fork tag:** `v2.2.0-fork1`
+upstream `2.2.0`. The fork pins that base and numbers its own patches with
+the `forkN` marker: `fork1` shipped the team operations set, `fork2` adds
+the missions queue settings.
+**Fork tag:** `v2.2.0-fork2`
 
-This release turns **Team Mode into a first-class surface** — everything a
+The fork turns **Team Mode into a first-class surface** — everything a
 team is stays observable from the app — and ships three more product blocks
 on top: **Missions**, goal prompts filed into a paced queue of sessions and
 teams of their own; **Contacts**, saved assistant personas each keeping one
 continuing chat; and three chat flow gifts.
+
+---
+
+## New in `2.2.0-fork2`
+
+**Missions queue settings.** The Goals page grows a queue settings card:
+how many goals run at once (1–16, default two) and the watch window in
+minutes (1–1440, default one hour). The values live beside the queue in
+`missions.json` and survive restarts; a stored value outside the bounds
+falls back to the default instead of refusing to boot. Raising the limit
+starts queued goals on the same pass; lowering it only stops admissions —
+running goals are not cancelled. A new window arms the watches started
+after the change; running watches keep theirs, so a turn finishing right
+now is not judged by a window it never had.
 
 ---
 
@@ -93,7 +107,7 @@ model answers as the saved role from the very first reply.
 
 ## Distribution
 
-Assets for this release: `OpenChamber-beta-2.2.0-fork1-mac-arm64.dmg` (and
+Assets for this release: `OpenChamber-beta-2.2.0-fork2-mac-arm64.dmg` (and
 the zip) — macOS, Apple silicon. The app is ad-hoc signed and not
 notarized: on first launch macOS may refuse it, so right-click → Open once,
 or run `xattr -dr com.apple.quarantine "/Applications/OpenChamber Beta.app"`
